@@ -7,7 +7,6 @@ import com.healthmarketscience.jackcess.Column;
 import com.healthmarketscience.jackcess.Table;
 
 import java.io.BufferedWriter;
-import java.io.Console;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
@@ -31,7 +30,7 @@ public final class Main {
             throw new IOException("Could not create output directory: " + outputDir);
         }
 
-        String password = resolvePassword();
+        String password = PasswordResolver.resolve();
         try (Database db = new DatabaseBuilder(input)
                 .setReadOnly(true)
                 .setCodecProvider(new CryptCodecProvider(password))
@@ -61,27 +60,6 @@ public final class Main {
                 }
             }
         }
-    }
-
-    /**
-     * Resolves the Money file password, if any, in priority order:
-     * 1. The {@code MNY_PASSWORD} environment variable, if set (including set-but-empty).
-     * 2. An interactive prompt via {@link System#console()}, if a console is attached.
-     * 3. {@code null} (no password), if neither of the above is available.
-     */
-    private static String resolvePassword() {
-        String envPassword = System.getenv("MNY_PASSWORD");
-        if (envPassword != null) {
-            return envPassword;
-        }
-        Console console = System.console();
-        if (console != null) {
-            char[] chars = console.readPassword("Money file password (leave blank if none): ");
-            if (chars != null) {
-                return new String(chars);
-            }
-        }
-        return null;
     }
 
     private static int dumpTable(Table table, String tableName, File outputDir) throws IOException {
