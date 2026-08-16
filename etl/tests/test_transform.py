@@ -58,3 +58,23 @@ def test_build_transactions_skips_unknown_account():
         known_payee_ids={100, 101},
     )
     assert all(t["transaction_id"] != 1003 for t in transactions)
+
+
+def test_build_transactions_skips_malformed_account_id():
+    transactions = build_transactions(
+        FIXTURES,
+        known_account_ids={1, 2, 3},
+        known_category_ids={10, 11},
+        known_payee_ids={100, 101},
+    )
+    assert all(t["transaction_id"] != 1004 for t in transactions)
+
+
+def test_build_transactions_skips_malformed_amount():
+    transactions = build_transactions(
+        FIXTURES,
+        known_account_ids={1, 2, 3},
+        known_category_ids={10, 11},
+        known_payee_ids={100, 101},
+    )
+    assert all(t["transaction_id"] != 1005 for t in transactions)

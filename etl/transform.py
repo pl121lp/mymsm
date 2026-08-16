@@ -23,7 +23,10 @@ def read_raw_table(raw_dir: Path, table_name: str) -> list[dict]:
 def _to_int(raw: Optional[str]) -> Optional[int]:
     if raw is None or raw.strip() == "":
         return None
-    return int(float(raw))
+    try:
+        return int(float(raw))
+    except ValueError:
+        return None
 
 
 def build_accounts(raw_dir: Path) -> list[dict]:
