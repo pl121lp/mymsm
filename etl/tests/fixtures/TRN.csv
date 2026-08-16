@@ -1,0 +1,5 @@
+htrn,hacct,hcat,hpay,dt,amt,mem
+1000,1,10,100,2024-01-05,-52.30,Weekly groceries
+1001,1,11,101,2024-01-01,-1200.00,January rent
+1002,1,999,100,2024-01-06,-10.00,Unknown category should be nulled
+1003,999,10,100,2024-01-07,-5.00,Unknown account should be skipped
