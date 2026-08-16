@@ -1,0 +1,9 @@
+*.mny
+*.mbf
+data/raw/
+money.duckdb
+.venv/
+extract-mny/target/
+__pycache__/
+*.pyc
+.pytest_cache/
