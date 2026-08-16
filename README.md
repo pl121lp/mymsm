@@ -47,6 +47,22 @@ Neither the source `.mny`/`.mbf` files nor any generated output
 (`data/raw/`, `money.duckdb`) are committed to git — see `.gitignore`.
 They all contain your personal financial data.
 
+## Password protection
+
+If your `.mny` file is password-protected, you can provide the password in one of two ways:
+
+1. **Set the `MNY_PASSWORD` environment variable** before running the script:
+
+       MNY_PASSWORD='your-password' ./run.sh "My Money.mny"
+
+2. **Run the script normally** — if no password is set via environment and a terminal is
+   attached, the extractor will prompt you interactively:
+
+       ./run.sh "My Money.mny"
+
+In a non-interactive context (e.g., cron or a CI/CD pipeline) with a password-protected
+file, you must use the environment variable to avoid an error.
+
 ## Querying the result
 
     .venv/bin/python -c "
