@@ -7,3 +7,4 @@ extract-mny/target/
 __pycache__/
 *.pyc
 .pytest_cache/
+status.txt

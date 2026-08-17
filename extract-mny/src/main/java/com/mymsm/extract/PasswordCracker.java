@@ -9,9 +9,12 @@ import java.io.File;
 import java.io.IOException;
 import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
@@ -82,6 +85,18 @@ public final class PasswordCracker {
                 String alphabet = args.length > 3 ? args[3].toUpperCase() : DEFAULT_ALPHABET;
                 runBruteforce(mnyFile, header, length, alphabet);
                 break;
+            case "dict":
+                requireArgs(args, 3, "dict <file> <wordlist-file>");
+                runDict(mnyFile, header, new File(args[2]));
+                break;
+            case "dictrules":
+                requireArgs(args, 3, "dictrules <file> <wordlist-file>");
+                try {
+                    runDictRules(mnyFile, header, new File(args[2]));
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                break;
             default:
                 printUsage();
                 System.exit(2);
@@ -101,6 +116,8 @@ public final class PasswordCracker {
         System.err.println("  benchmark <file> [seconds]");
         System.err.println("  near <file> <seed> [maxEditDistance] [mutationAlphabet]");
         System.err.println("  bruteforce <file> <length> [alphabet]");
+        System.err.println("  dict <file> <wordlist-file>");
+        System.err.println("  dictrules <file> <wordlist-file>");
     }
 
     // ---- verify --------------------------------------------------------
@@ -178,31 +195,73 @@ public final class PasswordCracker {
 
     // ---- near (edit-distance mutations of a seed) -----------------------
 
+    /**
+     * Hard cap on distinct candidates ever held in memory for a single
+     * {@code near} run. Edit-distance search grows combinatorially with
+     * seed length, alphabet size, and distance (roughly
+     * (seedLength * 2 * alphabetSize)^distance) - a 19-character seed at
+     * distance 3 with a 36-symbol alphabet generates on the order of
+     * billions of candidate strings, which is what exhausts heap if they're
+     * all materialized at once. Candidates are checked immediately as they
+     * are generated (never bulk-collected), and generation stops the
+     * instant this cap is hit, so memory stays bounded regardless of how
+     * large the theoretical space is.
+     */
+    private static final int MAX_NEAR_CANDIDATES = 2_000_000;
+
     private static void runNear(File mnyFile, MsisamPasswordCheck.Header header, String seed, int maxDistance, char[] alphabet) throws IOException {
-        Set<String> candidates = new LinkedHashSet<>();
-        candidates.add(seed);
-        Set<String> frontier = new LinkedHashSet<>(candidates);
-        for (int d = 1; d <= maxDistance; d++) {
-            Set<String> next = new LinkedHashSet<>();
-            for (String s : frontier) {
-                next.addAll(editDistanceOneVariants(s, alphabet));
-            }
-            next.removeAll(candidates);
-            candidates.addAll(next);
-            frontier = next;
+        MessageDigest md = header.newDigest();
+        Set<String> seen = new HashSet<>();
+        seen.add(seed);
+
+        long checked = 1;
+        if (tryAndConfirm(mnyFile, header, md, seed)) {
+            return;
         }
 
-        System.out.println("Trying " + candidates.size() + " candidates within edit distance " + maxDistance + " of \"" + seed + "\"...");
-        MessageDigest md = header.newDigest();
-        for (String candidate : candidates) {
-            if (MsisamPasswordCheck.check(header, candidate, md)) {
-                System.out.println("Fast checker ACCEPTS: [" + candidate + "]");
-                if (confirmWithRealLibrary(mnyFile, candidate)) {
-                    return;
+        List<String> frontier = new ArrayList<>();
+        frontier.add(seed);
+        boolean capped = false;
+
+        for (int d = 1; d <= maxDistance && !capped && !frontier.isEmpty(); d++) {
+            List<String> nextFrontier = new ArrayList<>();
+            outer:
+            for (String s : frontier) {
+                for (String variant : editDistanceOneVariants(s, alphabet)) {
+                    if (!seen.add(variant)) {
+                        continue; // already generated (possibly at an earlier distance)
+                    }
+                    if (seen.size() > MAX_NEAR_CANDIDATES) {
+                        capped = true;
+                        break outer;
+                    }
+                    nextFrontier.add(variant);
+                    checked++;
+                    if (tryAndConfirm(mnyFile, header, md, variant)) {
+                        return;
+                    }
                 }
             }
+            System.out.println("  distance " + d + ": " + checked + " candidates checked");
+            frontier = nextFrontier;
         }
-        System.out.println("No match found within edit distance " + maxDistance + " of \"" + seed + "\".");
+
+        if (capped) {
+            System.out.println("Stopped early: candidate space for \"" + seed + "\" exceeded " + MAX_NEAR_CANDIDATES
+                    + " distinct strings before reaching distance " + maxDistance + " (checked " + checked + ").");
+            System.out.println("This seed is too long/the alphabet too wide for this distance to search exhaustively.");
+            System.out.println("Try a shorter seed, a smaller alphabet, or a lower max edit distance for it.");
+        } else {
+            System.out.println("No match found within edit distance " + maxDistance + " of \"" + seed + "\" (" + checked + " candidates checked).");
+        }
+    }
+
+    private static boolean tryAndConfirm(File mnyFile, MsisamPasswordCheck.Header header, MessageDigest md, String candidate) throws IOException {
+        if (!MsisamPasswordCheck.check(header, candidate, md)) {
+            return false;
+        }
+        System.out.println("Fast checker ACCEPTS: [" + candidate + "]");
+        return confirmWithRealLibrary(mnyFile, candidate);
     }
 
     private static final char[] LOWER_ALPHABET = "abcdefghijklmnopqrstuvwxyz".toCharArray();
@@ -305,6 +364,195 @@ public final class PasswordCracker {
             }
 
             index += stride;
+        }
+    }
+
+    // ---- dict (wordlist attack) -------------------------------------------
+
+    /**
+     * Checks each line of a wordlist file as a candidate password, in file
+     * order, stopping at the first confirmed hit. Reads and checks one line
+     * at a time (never loads the whole file into memory) so this scales to
+     * multi-million-line lists like rockyou.txt without the memory blowup
+     * {@code near} mode used to have.
+     */
+    private static void runDict(File mnyFile, MsisamPasswordCheck.Header header, File wordlistFile) throws IOException {
+        if (!wordlistFile.isFile()) {
+            System.err.println("Not a file: " + wordlistFile);
+            System.exit(2);
+            return;
+        }
+
+        MessageDigest md = header.newDigest();
+        long checked = 0;
+        long startNanos = System.nanoTime();
+
+        try (java.io.BufferedReader reader = new java.io.BufferedReader(
+                new java.io.InputStreamReader(new java.io.FileInputStream(wordlistFile), java.nio.charset.StandardCharsets.ISO_8859_1))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isEmpty()) {
+                    continue;
+                }
+                checked++;
+                if (tryAndConfirm(mnyFile, header, md, line)) {
+                    return;
+                }
+                if (checked % PROGRESS_INTERVAL == 0) {
+                    double elapsed = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+                    System.out.printf("  %,d candidates checked, %.0f/sec%n", checked, checked / Math.max(elapsed, 0.001));
+                }
+            }
+        }
+
+        System.out.println("No match found in " + wordlistFile + " (" + checked + " candidates checked).");
+    }
+
+    // ---- dictrules (wordlist + common suffix/prefix mutations) -----------
+
+    private static final int DICT_RULES_QUEUE_CAPACITY = 5_000;
+
+    /**
+     * Common password-mangling suffixes: digits 0-9, zero-padded 00-99,
+     * plausible years, and a handful of common punctuation/number suffixes.
+     * Case-mangling rules (a real cracking rule set would include Word,
+     * WORD, wOrD, ...) are deliberately omitted - Money's password check
+     * uppercases before comparing, so case variants of the same string are
+     * redundant here.
+     */
+    private static List<String> buildRuleSuffixes() {
+        Set<String> suffixes = new LinkedHashSet<>();
+        suffixes.add("");
+        for (int i = 0; i <= 9; i++) {
+            suffixes.add(String.valueOf(i));
+        }
+        for (int i = 0; i <= 99; i++) {
+            suffixes.add(String.format("%02d", i));
+        }
+        for (int year = 1970; year <= 2026; year++) {
+            suffixes.add(String.valueOf(year));
+        }
+        for (String extra : new String[]{"!", "!!", "?", "#", "007", "666", "123", "1234"}) {
+            suffixes.add(extra);
+        }
+        return new ArrayList<>(suffixes);
+    }
+
+    private static List<String> mangle(String word, List<String> suffixes) {
+        List<String> variants = new ArrayList<>(suffixes.size() + 2);
+        for (String suffix : suffixes) {
+            variants.add(word + suffix);
+        }
+        variants.add("1" + word);
+        variants.add("0" + word);
+        return variants;
+    }
+
+    /**
+     * Like {@link #runDict} but tries each wordlist entry plus common
+     * suffix/prefix mutations ({@link #mangle}), multi-threaded. A single
+     * reader thread streams the wordlist file into a small bounded queue
+     * (never loading the whole file into memory - same lesson as the {@code
+     * near} mode OOM fix) and worker threads consume from it, each
+     * generating and checking that word's mutated variants.
+     */
+    private static void runDictRules(File mnyFile, MsisamPasswordCheck.Header header, File wordlistFile)
+            throws IOException, InterruptedException {
+        if (!wordlistFile.isFile()) {
+            System.err.println("Not a file: " + wordlistFile);
+            System.exit(2);
+            return;
+        }
+
+        List<String> suffixes = buildRuleSuffixes();
+        int threads = Runtime.getRuntime().availableProcessors();
+        System.out.println("Using " + suffixes.size() + " suffix rules + 2 prefix rules per word ("
+                + (suffixes.size() + 2) + " variants/word), " + threads + " threads.");
+
+        BlockingQueue<String> queue = new ArrayBlockingQueue<>(DICT_RULES_QUEUE_CAPACITY);
+        String poison = new String("__MNY_DICTRULES_POISON__");
+        AtomicBoolean found = new AtomicBoolean(false);
+        AtomicReference<String> winner = new AtomicReference<>();
+        AtomicLong wordsRead = new AtomicLong();
+        AtomicLong candidatesChecked = new AtomicLong();
+        long startNanos = System.nanoTime();
+
+        Thread reader = new Thread(() -> {
+            try (java.io.BufferedReader r = new java.io.BufferedReader(
+                    new java.io.InputStreamReader(new java.io.FileInputStream(wordlistFile),
+                            java.nio.charset.StandardCharsets.ISO_8859_1))) {
+                String line;
+                while ((line = r.readLine()) != null && !found.get()) {
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    while (!found.get() && !queue.offer(line, 200, java.util.concurrent.TimeUnit.MILLISECONDS)) {
+                        // queue full; retry until space frees up or search stops
+                    }
+                    wordsRead.incrementAndGet();
+                }
+            } catch (IOException e) {
+                e.printStackTrace();
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            } finally {
+                for (int i = 0; i < threads; i++) {
+                    try {
+                        queue.put(poison);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                    }
+                }
+            }
+        });
+        reader.start();
+
+        List<Thread> workers = new ArrayList<>();
+        for (int t = 0; t < threads; t++) {
+            Thread worker = new Thread(() -> {
+                MessageDigest md = header.newDigest();
+                try {
+                    while (!found.get()) {
+                        String word = queue.take();
+                        if (word == poison) {
+                            return;
+                        }
+                        for (String variant : mangle(word, suffixes)) {
+                            if (found.get()) {
+                                return;
+                            }
+                            long c = candidatesChecked.incrementAndGet();
+                            if (c % (PROGRESS_INTERVAL * 5) == 0) {
+                                double elapsed = (System.nanoTime() - startNanos) / 1_000_000_000.0;
+                                System.out.printf("  %,d candidates checked (%,d words read), %.0f/sec%n",
+                                        c, wordsRead.get(), c / Math.max(elapsed, 0.001));
+                            }
+                            try {
+                                if (tryAndConfirm(mnyFile, header, md, variant) && found.compareAndSet(false, true)) {
+                                    winner.set(variant);
+                                    return;
+                                }
+                            } catch (IOException e) {
+                                e.printStackTrace();
+                            }
+                        }
+                    }
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+            });
+            workers.add(worker);
+            worker.start();
+        }
+
+        reader.join();
+        for (Thread worker : workers) {
+            worker.join();
+        }
+
+        if (!found.get()) {
+            System.out.println("No match found in " + wordlistFile + " with rule mangling ("
+                    + candidatesChecked.get() + " candidates checked across " + wordsRead.get() + " words).");
         }
     }
 
