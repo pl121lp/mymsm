@@ -71,6 +71,16 @@ file, you must use the environment variable to avoid an error.
     print(conn.execute('SELECT * FROM accounts').fetchdf())
     "
 
+## Browsing the data
+
+    ./run-ui.sh
+
+Opens a desktop window (PySide6) listing accounts on the left; selecting
+one shows its transactions on the right. Closed accounts are hidden by
+default — check "Show closed accounts" to see them. Read-only: this tool
+does not modify `money.duckdb`. Requires `money.duckdb` to already exist
+(run `./extract-data-to-db.sh` first if it doesn't).
+
 ## Important caveat: column mapping may need adjustment
 
 Money's internal table/column names (`ACCT`, `TRN`, `CAT`, `PAY`, etc.)
