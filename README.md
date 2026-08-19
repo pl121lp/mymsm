@@ -89,56 +89,14 @@ are a different format).
 Case doesn't matter for Money passwords — the underlying encryption already
 normalizes to uppercase before comparing — so that's never the cause.
 
-### Recovering a forgotten/misremembered password
-
-If you're confident the file has a password but can't get it right, there's
-an offline recovery tool that's much faster than testing guesses through the
-full pipeline:
-
-    tools/mny-password-crack.sh "My Money.mny"
-
-It tries a list of seed words/variants (`tools/mny-password-seeds.txt` — edit
-this to add your own guesses, one per line) plus nearby typos, substitutions,
-and insertions of each, using a standalone reimplementation of Money's
-password check (`MsisamPasswordCheck.java`) that doesn't need to open the
-database — orders of magnitude faster than the real extraction pipeline.
-Every candidate it accepts is re-verified against the real jackcess-encrypt
-library before being reported, so a hit is a real hit.
-
-If nothing in the seed list is close enough, it prints the next steps:
-widening the mutation alphabet, increasing edit distance, or a full
-exhaustive search (`tools/mny-password-bruteforce.sh`) — check expected
-runtime first with `tools/mny-password-benchmark.sh`, since exhaustive
-search over all N-letter passwords can take hours.
-
-**If the file was ever set up with Money's online services (Passport/.NET
-Passport/Windows Live/MSN sign-in)** — a sign this applies: Money's open
-dialog offers "I want to sign in to Money directly, without access to all
-online services" — the actual database password may not be a password you
-ever chose specifically for Money at all. From Money 2003 onward, when a
-file uses Passport sign-in, the database password *is* the password for
-that online account. That fallback screen exists because Microsoft shut
-those online services down years ago, but the file still expects the old
-account's password, not a fresh local one. If you don't remember it and
-have no old candidates worth mutating, a dictionary attack against a real
-leaked-password list is more effective than guessing:
-
-    tools/mny-password-dict.sh "My Money.mny" /path/to/wordlist.txt
-
-It checks each line of the wordlist directly (streamed, so multi-million-line
-lists are fine) and stops at the first confirmed hit. A reasonable list to
-start with is SecLists' `rockyou.txt`
-(github.com/danielmiessler/SecLists, under `Passwords/Leaked-Databases/`;
-already present at `/usr/share/wordlists/rockyou.txt.gz` on Kali Linux) —
-at this project's measured throughput (~4.5M checks/sec on a 16-core
-machine via `tools/mny-password-benchmark.sh`), its ~14 million entries
-take seconds to run through.
+If you don't have the password at all, Microsoft Money itself can save a copy
+of the file without password protection (open it in Money, then File > Save
+As with the password field cleared) — simpler than trying to recover it here.
 
 `tools/` is meant for standalone maintenance/diagnostic utilities like these,
 separate from the two-stage extraction pipeline; feel free to extend
-`PasswordDiag`/`PasswordCracker`
-(`extract-mny/src/main/java/com/mymsm/extract/`) with more checks or search
-strategies as new issues come up.
+`PasswordDiag` (`extract-mny/src/main/java/com/mymsm/extract/`) with more
+checks as new issues come up.
 
 ## Querying the result
 
