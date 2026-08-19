@@ -63,41 +63,6 @@ If your `.mny` file is password-protected, you can provide the password in one o
 In a non-interactive context (e.g., cron or a CI/CD pipeline) with a password-protected
 file, you must use the environment variable to avoid an error.
 
-### Diagnosing "Incorrect password" errors
-
-If the extractor rejects a password you're sure is correct, run the standalone
-diagnostic tool instead of the full pipeline:
-
-    tools/mny-password-diag.sh "My Money.mny"
-    MNY_PASSWORD='your-password' tools/mny-password-diag.sh "My Money.mny"
-
-It resolves the password the same way `run.sh` does, then prints it back
-verbatim (bracketed as `[...]` so stray leading/trailing whitespace is
-visible) along with its length and a non-reversible fingerprint, right before
-feeding it to the decryption step — so you can see exactly what Java received
-versus what you meant to type. It then tries to open the file and reports
-whether the password was accepted. Because it prints the password to your
-terminal, don't run it where the output could be captured or shared (screen
-recordings, shared terminals, CI logs). A mismatch between what's printed and
-what you intended usually means shell quoting or a typo changed the password
-before it ever reached the decryption step (a common cause: an unquoted
-`MNY_PASSWORD` containing `$`, `` ` ``, `!`, or spaces gets mangled by the
-shell). It also tells you if the file isn't a valid Money database at all
-(e.g. you pointed it at a `.mbf` backup instead of the `.mny` file — those
-are a different format).
-
-Case doesn't matter for Money passwords — the underlying encryption already
-normalizes to uppercase before comparing — so that's never the cause.
-
-If you don't have the password at all, Microsoft Money itself can save a copy
-of the file without password protection (open it in Money, then File > Save
-As with the password field cleared) — simpler than trying to recover it here.
-
-`tools/` is meant for standalone maintenance/diagnostic utilities like these,
-separate from the two-stage extraction pipeline; feel free to extend
-`PasswordDiag` (`extract-mny/src/main/java/com/mymsm/extract/`) with more
-checks as new issues come up.
-
 ## Querying the result
 
     .venv/bin/python -c "
