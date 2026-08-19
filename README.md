@@ -81,6 +81,11 @@ default — check "Show closed accounts" to see them. Read-only: this tool
 does not modify `money.duckdb`. Requires `money.duckdb` to already exist
 (run `./extract-data-to-db.sh` first if it doesn't).
 
+Note: the Payee and Memo columns may show blank for all transactions —
+this depends on the `hpay`/`mem` column mapping in `etl/column_map.py`
+being correct for your Money file version (see "Important caveat" below);
+it's a known gap in the extraction stage, not a bug in this UI.
+
 ## Important caveat: column mapping may need adjustment
 
 Money's internal table/column names (`ACCT`, `TRN`, `CAT`, `PAY`, etc.)

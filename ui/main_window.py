@@ -29,12 +29,15 @@ class MainWindow(QMainWindow):
 
         self.account_view = QTableView()
         self.account_view.setModel(self.account_model)
+        self.account_view.horizontalHeader().setStretchLastSection(True)
+        self.account_view.resizeColumnsToContents()
         self.account_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.account_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.account_view.selectionModel().selectionChanged.connect(self._on_account_selected)
 
         self.transaction_view = QTableView()
         self.transaction_view.setModel(self.transaction_model)
+        self.transaction_view.horizontalHeader().setStretchLastSection(True)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
@@ -57,6 +60,7 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Failed to load accounts: {exc}")
             return
         self.account_model.set_accounts(accounts)
+        self.account_view.resizeColumnsToContents()
         self.transaction_model.set_transactions([])
 
     def _on_account_selected(self, selected=None, deselected=None):
@@ -71,3 +75,4 @@ class MainWindow(QMainWindow):
             self.statusBar().showMessage(f"Failed to load transactions: {exc}")
             return
         self.transaction_model.set_transactions(transactions)
+        self.transaction_view.resizeColumnsToContents()
