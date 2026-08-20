@@ -77,7 +77,8 @@ class AccountTableModel(QAbstractTableModel):
         return sum(
             (
                 self.to_usd(currency, balance)
-                for _, _, _, currency, balance, _ in self._accounts
+                for _, _, _, currency, balance, is_closed in self._accounts
+                if not is_closed
             ),
             start=Decimal("0"),
         )
@@ -116,6 +117,11 @@ class TransactionTableModel(QAbstractTableModel):
     DEFAULT_COLUMNS = ["Date", "Payee", "Category", "Memo", "Amount"]
     INVESTMENT_COLUMNS = ["Date", "Investment", "Activity", "Quantity", "Price", "Amount", "Memo"]
 
+    # Maps each column set's display columns to the underlying transaction
+    # tuple index (see data.py's list_transactions row shape).
+    DEFAULT_FIELD_INDEXES = [1, 2, 3, 4, 5]
+    INVESTMENT_FIELD_INDEXES = [1, 6, 7, 8, 9, 5, 4]
+
     def __init__(self, transactions=None, parent=None, is_investment=False):
         super().__init__(parent)
         self._transactions = transactions or []
@@ -130,6 +136,21 @@ class TransactionTableModel(QAbstractTableModel):
     @property
     def _columns(self):
         return self.INVESTMENT_COLUMNS if self._is_investment else self.DEFAULT_COLUMNS
+
+    @property
+    def _field_indexes(self):
+        return self.INVESTMENT_FIELD_INDEXES if self._is_investment else self.DEFAULT_FIELD_INDEXES
+
+    def sort(self, column, order=Qt.AscendingOrder):
+        if not self._transactions:
+            return
+        field_index = self._field_indexes[column]
+        self.layoutAboutToBeChanged.emit()
+        known = [row for row in self._transactions if row[field_index] is not None]
+        unknown = [row for row in self._transactions if row[field_index] is None]
+        known.sort(key=lambda row: row[field_index], reverse=(order == Qt.DescendingOrder))
+        self._transactions = known + unknown
+        self.layoutChanged.emit()
 
     def rowCount(self, parent=None):
         return len(self._transactions)

@@ -61,6 +61,14 @@ def test_total_usd_sums_converted_balances():
     assert model.total_usd() == Decimal("200.00")
 
 
+def test_total_usd_excludes_closed_accounts():
+    model = AccountTableModel([
+        (1, "Checking", "0", "USD", Decimal("100.00"), False),
+        (2, "Old Card", "1", "USD", Decimal("500.00"), True),
+    ])
+    assert model.total_usd() == Decimal("100.00")
+
+
 def test_open_account_name_has_no_prefix():
     model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False)])
     assert _data(model, 0, 0) == "Checking"
@@ -135,3 +143,51 @@ def test_switching_back_to_non_investment_restores_default_columns():
     model.set_transactions([NON_INVESTMENT_ROW], is_investment=False)
     assert model.columnCount() == 5
     assert _data(model, 0, 1) == "Store A"
+
+
+def test_sort_by_amount_ascending():
+    rows = [
+        (1, date(2024, 1, 1), "Store A", "Groceries", "m1", Decimal("50.00"), None, None, None, None),
+        (2, date(2024, 1, 2), "Store B", "Dining", "m2", Decimal("-20.00"), None, None, None, None),
+        (3, date(2024, 1, 3), "Store C", "Rent", "m3", Decimal("10.00"), None, None, None, None),
+    ]
+    model = TransactionTableModel(rows)
+    model.sort(4, Qt.AscendingOrder)
+    assert [_data(model, r, 4) for r in range(3)] == ["-20.00", "10.00", "50.00"]
+
+
+def test_sort_by_amount_descending():
+    rows = [
+        (1, date(2024, 1, 1), "Store A", "Groceries", "m1", Decimal("50.00"), None, None, None, None),
+        (2, date(2024, 1, 2), "Store B", "Dining", "m2", Decimal("-20.00"), None, None, None, None),
+        (3, date(2024, 1, 3), "Store C", "Rent", "m3", Decimal("10.00"), None, None, None, None),
+    ]
+    model = TransactionTableModel(rows)
+    model.sort(4, Qt.DescendingOrder)
+    assert [_data(model, r, 4) for r in range(3)] == ["50.00", "10.00", "-20.00"]
+
+
+def test_sort_by_payee_puts_blank_payees_last_regardless_of_direction():
+    rows = [
+        (1, date(2024, 1, 1), "Store B", "Groceries", "m1", Decimal("1.00"), None, None, None, None),
+        (2, date(2024, 1, 2), None, "Dining", "m2", Decimal("2.00"), None, None, None, None),
+        (3, date(2024, 1, 3), "Store A", "Rent", "m3", Decimal("3.00"), None, None, None, None),
+    ]
+    model = TransactionTableModel(rows)
+
+    model.sort(1, Qt.AscendingOrder)
+    assert [_data(model, r, 1) for r in range(3)] == ["Store A", "Store B", ""]
+
+    model.sort(1, Qt.DescendingOrder)
+    assert [_data(model, r, 1) for r in range(3)] == ["Store B", "Store A", ""]
+
+
+def test_sort_investment_transactions_by_quantity():
+    rows = [
+        (1, date(2024, 1, 1), None, None, None, Decimal("1.00"), "Fund A", "1", Decimal("5.0"), Decimal("10.0")),
+        (2, date(2024, 1, 2), None, None, None, Decimal("2.00"), "Fund B", "1", Decimal("1.0"), Decimal("20.0")),
+    ]
+    model = TransactionTableModel()
+    model.set_transactions(rows, is_investment=True)
+    model.sort(3, Qt.AscendingOrder)
+    assert [_data(model, r, 3) for r in range(2)] == ["1.0000", "5.0000"]

@@ -71,6 +71,7 @@ class MainWindow(QMainWindow):
         self.transaction_view = QTableView()
         self.transaction_view.setModel(self.transaction_model)
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
+        self.transaction_view.setSortingEnabled(True)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
