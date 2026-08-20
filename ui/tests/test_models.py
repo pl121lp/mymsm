@@ -1,9 +1,9 @@
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QAbstractListModel, Qt
 
-from models import AccountTableModel, TransactionTableModel, activity_label
+from models import AccountTableModel, DictionaryListModel, TransactionTableModel, activity_label
 
 
 def _data(model, row, col):
@@ -191,3 +191,27 @@ def test_sort_investment_transactions_by_quantity():
     model.set_transactions(rows, is_investment=True)
     model.sort(3, Qt.AscendingOrder)
     assert [_data(model, r, 3) for r in range(2)] == ["1.0000", "5.0000"]
+
+
+def test_dictionary_list_model_shows_name_at_index():
+    model = DictionaryListModel([(10, "Utilities"), (20, "Groceries")])
+    assert model.data(model.index(0, 0), Qt.DisplayRole) == "Utilities"
+    assert model.data(model.index(1, 0), Qt.DisplayRole) == "Groceries"
+
+
+def test_dictionary_list_model_id_at_returns_id():
+    model = DictionaryListModel([(10, "Utilities"), (20, "Groceries")])
+    assert model.id_at(0) == 10
+    assert model.id_at(1) == 20
+
+
+def test_dictionary_list_model_row_count():
+    model = DictionaryListModel([(10, "Utilities"), (20, "Groceries")])
+    assert model.rowCount() == 2
+
+
+def test_dictionary_list_model_set_items_replaces_contents():
+    model = DictionaryListModel([(10, "Utilities")])
+    model.set_items([(30, "Entertainment")])
+    assert model.rowCount() == 1
+    assert model.id_at(0) == 30

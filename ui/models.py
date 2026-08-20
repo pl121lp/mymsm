@@ -2,7 +2,7 @@
 
 from decimal import Decimal
 
-from PySide6.QtCore import QAbstractTableModel, Qt
+from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
 
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
@@ -188,3 +188,25 @@ class TransactionTableModel(QAbstractTableModel):
                 f"{amount:.2f}",
             ]
         return values[index.column()]
+
+
+class DictionaryListModel(QAbstractListModel):
+    def __init__(self, items=None, parent=None):
+        super().__init__(parent)
+        self._items = items or []
+
+    def set_items(self, items):
+        self.beginResetModel()
+        self._items = items
+        self.endResetModel()
+
+    def id_at(self, row):
+        return self._items[row][0]
+
+    def rowCount(self, parent=None):
+        return len(self._items)
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        return self._items[index.row()][1]
