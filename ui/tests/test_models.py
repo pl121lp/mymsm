@@ -1,9 +1,15 @@
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import QAbstractListModel, Qt
+from PySide6.QtCore import Qt
 
-from models import AccountTableModel, DictionaryListModel, TransactionTableModel, activity_label
+from models import (
+    AccountTableModel,
+    CategoryTransactionTableModel,
+    DictionaryListModel,
+    TransactionTableModel,
+    activity_label,
+)
 
 
 def _data(model, row, col):
@@ -215,9 +221,6 @@ def test_dictionary_list_model_set_items_replaces_contents():
     model.set_items([(30, "Entertainment")])
     assert model.rowCount() == 1
     assert model.id_at(0) == 30
-
-
-from models import CategoryTransactionTableModel
 
 
 def test_category_transaction_model_shows_date_and_account():

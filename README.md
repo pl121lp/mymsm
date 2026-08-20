@@ -91,6 +91,19 @@ in the table but don't yet affect the computed value, so accounts whose
 shares mostly came in through those (e.g. RSU grants) will show an
 undercounted value. See `ACTIVITY_LABELS` in `ui/models.py`.
 
+The app also has a "Dictionaries" tab with "Categories" and "Investments"
+sub-tabs. Categories shows a list of category names; selecting one shows a
+table of that category's transactions across all accounts. Investments
+shows a list of securities; selecting one shows two charts — price over
+time, and cumulative quantity held over time, per account.
+
+The same caveat above about only Buy/Sell activity being understood well
+enough to affect share counts also applies to the quantity chart: a
+security whose shares came in mostly through other activity codes
+(transfers, grants, adjustments) will show an undercounted or empty
+quantity chart. A security with no Buy/Sell activity at all shows empty
+charts.
+
 Accounts in a foreign currency are detected automatically from Money's own
 currency data (`ACCT.hcrnc` → `CRNC.szIsoCode`) and shown in a `Currency`
 column; currently only USD (the primary currency) and SEK are handled.
