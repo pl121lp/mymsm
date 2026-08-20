@@ -210,3 +210,40 @@ class DictionaryListModel(QAbstractListModel):
         if role != Qt.DisplayRole:
             return None
         return self._items[index.row()][1]
+
+
+class CategoryTransactionTableModel(QAbstractTableModel):
+    COLUMNS = ["Date", "Account", "Payee", "Memo", "Amount"]
+
+    def __init__(self, transactions=None, parent=None):
+        super().__init__(parent)
+        self._transactions = transactions or []
+
+    def set_transactions(self, transactions):
+        self.beginResetModel()
+        self._transactions = transactions
+        self.endResetModel()
+
+    def rowCount(self, parent=None):
+        return len(self._transactions)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        _, txn_date, account_name, payee, memo, amount = self._transactions[index.row()]
+        values = [
+            txn_date.isoformat(),
+            account_name,
+            payee or "",
+            memo or "",
+            f"{amount:.2f}",
+        ]
+        return values[index.column()]

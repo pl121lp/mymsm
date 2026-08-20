@@ -215,3 +215,37 @@ def test_dictionary_list_model_set_items_replaces_contents():
     model.set_items([(30, "Entertainment")])
     assert model.rowCount() == 1
     assert model.id_at(0) == 30
+
+
+from models import CategoryTransactionTableModel
+
+
+def test_category_transaction_model_shows_date_and_account():
+    model = CategoryTransactionTableModel(
+        [(1000, date(2024, 3, 15), "Checking", "Store A", "weekly shop", Decimal("-52.30"))]
+    )
+    assert _data(model, 0, 0) == "2024-03-15"
+    assert _data(model, 0, 1) == "Checking"
+
+
+def test_category_transaction_model_formats_amount():
+    model = CategoryTransactionTableModel(
+        [(1000, date(2024, 3, 15), "Checking", "Store A", "weekly shop", Decimal("-52.30"))]
+    )
+    assert _data(model, 0, 4) == "-52.30"
+
+
+def test_category_transaction_model_handles_missing_payee_and_memo():
+    model = CategoryTransactionTableModel(
+        [(1002, date(2024, 3, 1), "Checking", None, None, Decimal("-75.00"))]
+    )
+    assert _data(model, 0, 2) == ""
+    assert _data(model, 0, 3) == ""
+
+
+def test_category_transaction_model_row_and_column_count():
+    model = CategoryTransactionTableModel(
+        [(1000, date(2024, 3, 15), "Checking", "Store A", "weekly shop", Decimal("-52.30"))]
+    )
+    assert model.rowCount() == 1
+    assert model.columnCount() == 5
