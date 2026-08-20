@@ -1,7 +1,14 @@
 from datetime import date
 from decimal import Decimal
 
-from data import list_accounts, list_categories, list_category_transactions, list_transactions
+from data import (
+    list_accounts,
+    list_categories,
+    list_category_transactions,
+    list_securities,
+    list_security_history,
+    list_transactions,
+)
 
 
 def test_list_accounts_excludes_closed_by_default(conn):
@@ -83,3 +90,24 @@ def test_list_category_transactions_returns_rows_across_accounts_sorted_by_date_
 
 def test_list_category_transactions_unknown_category_returns_empty(dict_conn):
     assert list_category_transactions(dict_conn, category_id=999) == []
+
+
+def test_list_securities_returns_all_ordered_by_name(dict_conn):
+    assert list_securities(dict_conn) == [
+        (501, "Apple Inc"),
+        (500, "Vanguard Total Stock Market Index"),
+    ]
+
+
+def test_list_security_history_computes_per_account_running_total(dict_conn):
+    assert list_security_history(dict_conn, security_id=500) == [
+        (3, "Brokerage A", date(2024, 1, 10), Decimal("18.39"), Decimal("8.0")),
+        (3, "Brokerage A", date(2024, 2, 10), Decimal("21.54"), Decimal("11.0")),
+        (3, "Brokerage A", date(2024, 3, 1), Decimal("22.63"), Decimal("10.0")),
+        (4, "Brokerage B", date(2024, 1, 15), Decimal("20.00"), Decimal("10.0")),
+        (4, "Brokerage B", date(2024, 2, 20), Decimal("25.00"), Decimal("8.0")),
+    ]
+
+
+def test_list_security_history_unknown_security_returns_empty(dict_conn):
+    assert list_security_history(dict_conn, security_id=999) == []

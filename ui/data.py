@@ -105,3 +105,34 @@ def list_category_transactions(
         ORDER BY t.txn_date DESC
     """
     return conn.execute(query, [category_id]).fetchall()
+
+
+def list_securities(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    return conn.execute(
+        "SELECT security_id, name FROM securities ORDER BY name"
+    ).fetchall()
+
+
+def list_security_history(
+    conn: duckdb.DuckDBPyConnection, security_id: int
+) -> list[tuple]:
+    query = """
+        WITH signed AS (
+            SELECT t.transaction_id, t.account_id, a.name AS account_name,
+                   t.txn_date, t.price,
+                   CASE WHEN t.activity = ? THEN -t.quantity ELSE t.quantity END AS signed_qty
+            FROM transactions t
+            JOIN accounts a ON a.account_id = t.account_id
+            WHERE t.security_id = ? AND t.activity IN (?, ?)
+        )
+        SELECT account_id, account_name, txn_date, price,
+               SUM(signed_qty) OVER (
+                   PARTITION BY account_id
+                   ORDER BY txn_date, transaction_id
+                   ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+               ) AS cumulative_qty
+        FROM signed
+        ORDER BY account_name, txn_date, transaction_id
+    """
+    params = [SELL_ACTIVITY, security_id, BUY_ACTIVITY, SELL_ACTIVITY]
+    return conn.execute(query, params).fetchall()
