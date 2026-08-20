@@ -1,7 +1,7 @@
 """Dictionaries tab: browse categories and investments across all accounts."""
 
-from PySide6.QtCharts import QChart, QChartView, QDateTimeAxis, QLineSeries, QValueAxis
-from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtCharts import QChart, QChartView
+from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 )
 
 import data
+from charts import build_line_chart
 from models import CategoryTransactionTableModel, DictionaryListModel
 
 
@@ -133,48 +134,7 @@ class InvestmentsPane(QWidget):
                 (txn_date, cumulative_qty)
             )
 
-        self.price_chart_view.setChart(self._build_line_chart("Price", price_by_account))
+        self.price_chart_view.setChart(build_line_chart("Price", price_by_account.values()))
         self.quantity_chart_view.setChart(
-            self._build_line_chart("Quantity Held", qty_by_account)
+            build_line_chart("Quantity Held", qty_by_account.values())
         )
-
-    @staticmethod
-    def _build_line_chart(title, series_by_account):
-        chart = QChart()
-        chart.setTitle(title)
-        axis_x = QDateTimeAxis()
-        axis_x.setFormat("yyyy-MM-dd")
-        axis_y = QValueAxis()
-        chart.addAxis(axis_x, Qt.AlignBottom)
-        chart.addAxis(axis_y, Qt.AlignLeft)
-
-        # QtCharts does not auto-union series ranges across pre-added axes, so
-        # track the true min/max across ALL series ourselves and set it explicitly
-        # below -- otherwise the visible range reflects only one series arbitrarily
-        # and other series' data can be silently clipped out of view.
-        x_min = x_max = None
-        y_min = y_max = None
-        for account_name, points in series_by_account.values():
-            series = QLineSeries()
-            series.setName(account_name)
-            for txn_date, value in points:
-                qdt = QDateTime(txn_date.year, txn_date.month, txn_date.day, 0, 0, 0)
-                x_ms = qdt.toMSecsSinceEpoch()
-                y_val = float(value)
-                series.append(x_ms, y_val)
-                x_min = x_ms if x_min is None else min(x_min, x_ms)
-                x_max = x_ms if x_max is None else max(x_max, x_ms)
-                y_min = y_val if y_min is None else min(y_min, y_val)
-                y_max = y_val if y_max is None else max(y_max, y_val)
-            chart.addSeries(series)
-            series.attachAxis(axis_x)
-            series.attachAxis(axis_y)
-
-        if x_min is not None:
-            if y_min == y_max:
-                y_min, y_max = y_min - 1, y_max + 1
-            axis_x.setRange(
-                QDateTime.fromMSecsSinceEpoch(x_min), QDateTime.fromMSecsSinceEpoch(x_max)
-            )
-            axis_y.setRange(y_min, y_max)
-        return chart

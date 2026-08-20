@@ -73,6 +73,13 @@ def list_accounts(
     return conn.execute(query, params).fetchall()
 
 
+def get_opening_balance(conn: duckdb.DuckDBPyConnection, account_id: int):
+    row = conn.execute(
+        "SELECT opening_balance FROM accounts WHERE account_id = ?", [account_id]
+    ).fetchone()
+    return row[0] if row else None
+
+
 def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[tuple]:
     query = """
         SELECT t.transaction_id, t.txn_date, p.name, c.name, t.memo, t.amount,

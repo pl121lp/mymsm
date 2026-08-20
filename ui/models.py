@@ -4,6 +4,8 @@ from decimal import Decimal
 
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
 
+from data import BUY_ACTIVITY, SELL_ACTIVITY
+
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
     "1": "Credit",
@@ -44,8 +46,45 @@ def format_quantity(quantity):
 PRIMARY_CURRENCY = "USD"
 
 
+def compute_account_value_history(transactions, opening_balance, is_investment):
+    """Running account value over time, from data.list_transactions() rows.
+
+    For non-investment accounts this is the opening balance plus a running
+    cumulative sum of transaction amounts. For investment accounts it's the
+    running (quantity * latest known price) summed across held securities,
+    using the same buy/sell signed-quantity logic as data.list_accounts().
+    """
+    ordered = sorted(transactions, key=lambda row: row[1])
+
+    if not is_investment:
+        balance = opening_balance if opening_balance is not None else Decimal("0")
+        history = []
+        for row in ordered:
+            balance += row[5]
+            history.append((row[1], balance))
+        return history
+
+    quantities = {}
+    prices = {}
+    history = []
+    for row in ordered:
+        txn_date, security, activity, quantity, price = row[1], row[6], row[7], row[8], row[9]
+        if security is None or activity not in (BUY_ACTIVITY, SELL_ACTIVITY):
+            continue
+        signed_qty = -quantity if activity == SELL_ACTIVITY else quantity
+        quantities[security] = quantities.get(security, Decimal("0")) + signed_qty
+        if price is not None:
+            prices[security] = price
+        total = sum(
+            (quantities[sec] * prices[sec] for sec in quantities if sec in prices),
+            start=Decimal("0"),
+        )
+        history.append((txn_date, total))
+    return history
+
+
 class AccountTableModel(QAbstractTableModel):
-    COLUMNS = ["Name", "Type", "Currency", "Balance"]
+    COLUMNS = ["Name", "Type", "Currency", "Balance", "Actions"]
 
     def __init__(self, accounts=None, parent=None):
         super().__init__(parent)
@@ -109,6 +148,7 @@ class AccountTableModel(QAbstractTableModel):
             account_type_label(account_type),
             currency,
             format_currency(self.to_usd(currency, balance)),
+            "",
         ]
         return values[index.column()]
 

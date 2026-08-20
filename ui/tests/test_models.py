@@ -9,6 +9,7 @@ from models import (
     DictionaryListModel,
     TransactionTableModel,
     activity_label,
+    compute_account_value_history,
 )
 
 
@@ -244,6 +245,79 @@ def test_category_transaction_model_handles_missing_payee_and_memo():
     )
     assert _data(model, 0, 2) == ""
     assert _data(model, 0, 3) == ""
+
+
+def test_compute_account_value_history_cash_account_runs_cumulative_balance():
+    rows = [
+        (1, date(2024, 1, 1), None, None, None, Decimal("50.00"), None, None, None, None),
+        (2, date(2024, 1, 2), None, None, None, Decimal("-20.00"), None, None, None, None),
+    ]
+    history = compute_account_value_history(rows, Decimal("100.00"), is_investment=False)
+    assert history == [
+        (date(2024, 1, 1), Decimal("150.00")),
+        (date(2024, 1, 2), Decimal("130.00")),
+    ]
+
+
+def test_compute_account_value_history_cash_account_sorts_by_date():
+    rows = [
+        (2, date(2024, 1, 2), None, None, None, Decimal("-20.00"), None, None, None, None),
+        (1, date(2024, 1, 1), None, None, None, Decimal("50.00"), None, None, None, None),
+    ]
+    history = compute_account_value_history(rows, Decimal("0.00"), is_investment=False)
+    assert [d for d, _ in history] == [date(2024, 1, 1), date(2024, 1, 2)]
+
+
+def test_compute_account_value_history_cash_account_defaults_missing_opening_balance_to_zero():
+    rows = [(1, date(2024, 1, 1), None, None, None, Decimal("10.00"), None, None, None, None)]
+    history = compute_account_value_history(rows, None, is_investment=False)
+    assert history == [(date(2024, 1, 1), Decimal("10.00"))]
+
+
+def test_compute_account_value_history_empty_transactions_returns_empty_list():
+    assert compute_account_value_history([], Decimal("100.00"), is_investment=False) == []
+
+
+def test_compute_account_value_history_investment_account_values_holdings_over_time():
+    rows = [
+        (1, date(2024, 1, 10), None, None, None, Decimal("147.12"),
+         "Fund A", "1", Decimal("8.0"), Decimal("18.39")),
+        (2, date(2024, 2, 10), None, None, None, Decimal("64.62"),
+         "Fund A", "1", Decimal("3.0"), Decimal("21.54")),
+        (3, date(2024, 3, 1), None, None, None, Decimal("-22.63"),
+         "Fund A", "2", Decimal("1.0"), Decimal("22.63")),
+    ]
+    history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
+    assert history == [
+        (date(2024, 1, 10), Decimal("147.12")),  # 8.0 * 18.39
+        (date(2024, 2, 10), Decimal("236.94")),  # 11.0 * 21.54
+        (date(2024, 3, 1), Decimal("226.30")),   # 10.0 * 22.63
+    ]
+
+
+def test_compute_account_value_history_investment_account_sums_across_securities():
+    rows = [
+        (1, date(2024, 1, 15), None, None, None, Decimal("200.00"),
+         "Fund A", "1", Decimal("10.0"), Decimal("20.00")),
+        (2, date(2024, 2, 20), None, None, None, Decimal("64.62"),
+         "Fund B", "1", Decimal("3.0"), Decimal("21.54")),
+    ]
+    history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
+    assert history == [
+        (date(2024, 1, 15), Decimal("200.00")),
+        (date(2024, 2, 20), Decimal("264.62")),
+    ]
+
+
+def test_compute_account_value_history_investment_account_ignores_non_trade_activity():
+    rows = [
+        (1, date(2024, 1, 10), None, None, None, Decimal("147.12"),
+         "Fund A", "1", Decimal("8.0"), Decimal("18.39")),
+        (2, date(2024, 1, 20), None, None, "RSU grant", Decimal("0.00"),
+         "Fund A", "17", Decimal("5.0"), Decimal("100.00")),
+    ]
+    history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
+    assert history == [(date(2024, 1, 10), Decimal("147.12"))]
 
 
 def test_category_transaction_model_row_and_column_count():
