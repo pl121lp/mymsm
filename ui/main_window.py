@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMainWindow,
     QSplitter,
+    QTabWidget,
     QTableView,
     QVBoxLayout,
     QWidget,
@@ -18,6 +19,7 @@ from PySide6.QtWidgets import (
 
 import data
 from data import INVESTMENT_ACCOUNT_TYPE
+from dictionaries_tab import CategoriesPane, InvestmentsPane
 from models import AccountTableModel, TransactionTableModel, account_type_label, format_currency
 
 SETTINGS_ORG = "mymsm"
@@ -90,7 +92,19 @@ class MainWindow(QMainWindow):
         splitter.addWidget(right)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
-        self.setCentralWidget(splitter)
+
+        dictionaries_tabs = QTabWidget()
+        dictionaries_tabs.addTab(
+            CategoriesPane(self._conn, self.statusBar().showMessage), "Categories"
+        )
+        dictionaries_tabs.addTab(
+            InvestmentsPane(self._conn, self.statusBar().showMessage), "Investments"
+        )
+
+        tabs = QTabWidget()
+        tabs.addTab(splitter, "Accounts")
+        tabs.addTab(dictionaries_tabs, "Dictionaries")
+        self.setCentralWidget(tabs)
 
         self._reload_accounts()
 
