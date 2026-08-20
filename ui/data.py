@@ -85,3 +85,23 @@ def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[
         ORDER BY t.txn_date DESC
     """
     return conn.execute(query, [account_id]).fetchall()
+
+
+def list_categories(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    return conn.execute(
+        "SELECT category_id, name FROM categories ORDER BY name"
+    ).fetchall()
+
+
+def list_category_transactions(
+    conn: duckdb.DuckDBPyConnection, category_id: int
+) -> list[tuple]:
+    query = """
+        SELECT t.transaction_id, t.txn_date, a.name, p.name, t.memo, t.amount
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        LEFT JOIN payees p ON t.payee_id = p.payee_id
+        WHERE t.category_id = ?
+        ORDER BY t.txn_date DESC
+    """
+    return conn.execute(query, [category_id]).fetchall()

@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from data import list_accounts, list_transactions
+from data import list_accounts, list_categories, list_category_transactions, list_transactions
 
 
 def test_list_accounts_excludes_closed_by_default(conn):
@@ -65,3 +65,21 @@ def test_list_transactions_resolves_investment_fields(conn):
 
 def test_list_transactions_unknown_account_returns_empty(conn):
     assert list_transactions(conn, account_id=999) == []
+
+
+def test_list_categories_returns_all_ordered_by_name(dict_conn):
+    assert list_categories(dict_conn) == [
+        (20, "Groceries"),
+        (10, "Utilities"),
+    ]
+
+
+def test_list_category_transactions_returns_rows_across_accounts_sorted_by_date_desc(dict_conn):
+    assert list_category_transactions(dict_conn, category_id=20) == [
+        (1000, date(2024, 3, 15), "Checking", "Store A", "weekly shop", Decimal("-52.30")),
+        (1001, date(2024, 3, 10), "Savings", "Store B", "snacks", Decimal("-20.00")),
+    ]
+
+
+def test_list_category_transactions_unknown_category_returns_empty(dict_conn):
+    assert list_category_transactions(dict_conn, category_id=999) == []
