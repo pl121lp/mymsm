@@ -16,15 +16,21 @@ def conn():
     apply_schema(connection)
     connection.execute(
         "INSERT INTO accounts VALUES "
-        "(1, 'Checking', 'Bank', FALSE), "
-        "(2, 'Old Card', 'Credit', TRUE)"
+        "(1, 'Checking', 'Bank', FALSE, 100.00, 'USD'), "
+        "(2, 'Old Card', 'Credit', TRUE, 0.00, 'USD'), "
+        "(3, 'Brokerage', '5', FALSE, 0.00, 'SEK')"
     )
     connection.execute("INSERT INTO categories VALUES (10, 'Groceries')")
     connection.execute("INSERT INTO payees VALUES (100, 'Store A')")
+    connection.execute("INSERT INTO securities VALUES (500, 'Vanguard Total Stock Market Index')")
     connection.execute(
         "INSERT INTO transactions VALUES "
-        "(1000, 1, 10, 100, '2024-03-15', -52.30, 'weekly shop'), "
-        "(1001, 1, NULL, NULL, '2024-03-10', 1000.00, NULL)"
+        "(1000, 1, 10, 100, '2024-03-15', -52.30, 'weekly shop', NULL, NULL, NULL, NULL), "
+        "(1001, 1, NULL, NULL, '2024-03-10', 1000.00, NULL, NULL, NULL, NULL, NULL), "
+        "(3000, 3, NULL, NULL, '2024-01-10', 147.12, NULL, 500, '1', 8.0, 18.39), "
+        "(3001, 3, NULL, NULL, '2024-02-10', 64.62, NULL, 500, '1', 3.0, 21.54), "
+        "(3002, 3, NULL, NULL, '2024-03-01', -22.63, NULL, 500, '2', 1.0, 22.63), "
+        "(3003, 3, NULL, NULL, '2024-03-05', 0.00, 'RSU grant', 500, '17', 5.0, 100.00)"
     )
     yield connection
     connection.close()

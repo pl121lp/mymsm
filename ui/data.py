@@ -2,23 +2,85 @@
 
 import duckdb
 
+# Money's raw account-type code for investment accounts (see ACCOUNT_TYPE_LABELS
+# in models.py). Only Buy(1)/Sell(2) activity is understood well enough to
+# affect share counts; other activity codes (transfers, grants, adjustments)
+# are shown in the transaction table but don't affect the computed value yet.
+INVESTMENT_ACCOUNT_TYPE = "5"
+BUY_ACTIVITY = "1"
+SELL_ACTIVITY = "2"
+
 
 def list_accounts(
     conn: duckdb.DuckDBPyConnection, include_closed: bool = False
 ) -> list[tuple]:
-    query = "SELECT account_id, name, account_type FROM accounts"
+    query = """
+        WITH signed_holdings AS (
+            SELECT t.account_id, t.security_id, t.txn_date, t.price,
+                   CASE WHEN t.activity = ? THEN -t.quantity ELSE t.quantity END AS signed_qty
+            FROM transactions t
+            WHERE t.security_id IS NOT NULL AND t.activity IN (?, ?)
+        ),
+        latest_price AS (
+            SELECT account_id, security_id, price,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY account_id, security_id ORDER BY txn_date DESC
+                   ) AS rn
+            FROM signed_holdings
+            WHERE price IS NOT NULL
+        ),
+        holdings AS (
+            SELECT account_id, security_id, SUM(signed_qty) AS net_qty
+            FROM signed_holdings
+            GROUP BY account_id, security_id
+        ),
+        investment_value AS (
+            SELECT h.account_id, SUM(h.net_qty * lp.price) AS value
+            FROM holdings h
+            JOIN latest_price lp
+                ON lp.account_id = h.account_id AND lp.security_id = h.security_id AND lp.rn = 1
+            GROUP BY h.account_id
+        ),
+        cash AS (
+            SELECT account_id, SUM(amount) AS total
+            FROM transactions
+            GROUP BY account_id
+        )
+        SELECT a.account_id, a.name, a.account_type, a.currency,
+               CASE WHEN a.account_type = ?
+                    THEN COALESCE(iv.value, 0)
+                    ELSE a.opening_balance + COALESCE(cash.total, 0)
+               END AS balance,
+               a.is_closed
+        FROM accounts a
+        LEFT JOIN cash ON cash.account_id = a.account_id
+        LEFT JOIN investment_value iv ON iv.account_id = a.account_id
+    """
+    params = [SELL_ACTIVITY, BUY_ACTIVITY, SELL_ACTIVITY, INVESTMENT_ACCOUNT_TYPE]
     if not include_closed:
-        query += " WHERE is_closed = FALSE"
-    query += " ORDER BY name"
-    return conn.execute(query).fetchall()
+        query += " WHERE a.is_closed = FALSE"
+    query += """
+        ORDER BY CASE a.account_type
+                     WHEN '0' THEN 0
+                     WHEN '1' THEN 1
+                     WHEN '5' THEN 2
+                     WHEN '6' THEN 3
+                     WHEN '3' THEN 4
+                     ELSE 5
+                 END,
+                 a.name
+    """
+    return conn.execute(query, params).fetchall()
 
 
 def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[tuple]:
     query = """
-        SELECT t.transaction_id, t.txn_date, p.name, c.name, t.memo, t.amount
+        SELECT t.transaction_id, t.txn_date, p.name, c.name, t.memo, t.amount,
+               sec.name, t.activity, t.quantity, t.price
         FROM transactions t
         LEFT JOIN payees p ON t.payee_id = p.payee_id
         LEFT JOIN categories c ON t.category_id = c.category_id
+        LEFT JOIN securities sec ON t.security_id = sec.security_id
         WHERE t.account_id = ?
         ORDER BY t.txn_date DESC
     """

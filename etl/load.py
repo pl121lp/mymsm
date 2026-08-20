@@ -12,18 +12,28 @@ from pathlib import Path
 import duckdb
 
 from schema import apply_schema
-from transform import build_accounts, build_categories, build_payees, build_transactions
+from transform import (
+    build_accounts,
+    build_categories,
+    build_currencies,
+    build_payees,
+    build_securities,
+    build_transactions,
+)
 
 
 def load(raw_dir: Path, db_path: Path) -> dict:
-    accounts = build_accounts(raw_dir)
+    currencies = build_currencies(raw_dir)
+    accounts = build_accounts(raw_dir, currencies)
     categories = build_categories(raw_dir)
     payees = build_payees(raw_dir)
+    securities = build_securities(raw_dir)
     transactions = build_transactions(
         raw_dir,
         known_account_ids={a["account_id"] for a in accounts},
         known_category_ids={c["category_id"] for c in categories},
         known_payee_ids={p["payee_id"] for p in payees},
+        known_security_ids={s["security_id"] for s in securities},
     )
 
     if db_path.exists():
@@ -33,8 +43,14 @@ def load(raw_dir: Path, db_path: Path) -> dict:
     try:
         apply_schema(conn)
         conn.executemany(
-            "INSERT INTO accounts VALUES (?, ?, ?, ?)",
-            [(a["account_id"], a["name"], a["account_type"], a["is_closed"]) for a in accounts],
+            "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    a["account_id"], a["name"], a["account_type"], a["is_closed"],
+                    a["opening_balance"], a["currency"],
+                )
+                for a in accounts
+            ],
         )
         conn.executemany(
             "INSERT INTO categories VALUES (?, ?)",
@@ -45,11 +61,16 @@ def load(raw_dir: Path, db_path: Path) -> dict:
             [(p["payee_id"], p["name"]) for p in payees],
         )
         conn.executemany(
-            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO securities VALUES (?, ?)",
+            [(s["security_id"], s["name"]) for s in securities],
+        )
+        conn.executemany(
+            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     t["transaction_id"], t["account_id"], t["category_id"], t["payee_id"],
-                    t["txn_date"], t["amount"], t["memo"],
+                    t["txn_date"], t["amount"], t["memo"], t["security_id"], t["activity"],
+                    t["quantity"], t["price"],
                 )
                 for t in transactions
             ],
@@ -61,6 +82,7 @@ def load(raw_dir: Path, db_path: Path) -> dict:
         "accounts": len(accounts),
         "categories": len(categories),
         "payees": len(payees),
+        "securities": len(securities),
         "transactions": len(transactions),
     }
 

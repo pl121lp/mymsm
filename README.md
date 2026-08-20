@@ -81,10 +81,22 @@ default — check "Show closed accounts" to see them. Read-only: this tool
 does not modify `money.duckdb`. Requires `money.duckdb` to already exist
 (run `./extract-data-to-db.sh` first if it doesn't).
 
-Note: the Payee and Memo columns may show blank for all transactions —
-this depends on the `hpay`/`mem` column mapping in `etl/column_map.py`
-being correct for your Money file version (see "Important caveat" below);
-it's a known gap in the extraction stage, not a bug in this UI.
+For investment accounts, the transaction table shows the security name,
+activity, quantity, and price instead of payee/category. The account's
+value is computed as (net shares held) × (latest known price), summed
+per security — but only Buy/Sell activity is currently understood well
+enough to affect share counts. Other investment activity codes seen in
+the raw data (position adjustments, transfers, stock grants) are shown
+in the table but don't yet affect the computed value, so accounts whose
+shares mostly came in through those (e.g. RSU grants) will show an
+undercounted value. See `ACTIVITY_LABELS` in `ui/models.py`.
+
+Accounts in a foreign currency are detected automatically from Money's own
+currency data (`ACCT.hcrnc` → `CRNC.szIsoCode`) and shown in a `Currency`
+column; currently only USD (the primary currency) and SEK are handled.
+Balances and the total are always converted to USD, using the "1 SEK = ___
+USD" rate at the top of the account list — edit it any time and everything
+recalculates; the value you set is remembered between runs.
 
 ## Important caveat: column mapping may need adjustment
 

@@ -15,6 +15,16 @@ ACCOUNTS = {
     "name": "szFull",
     "account_type": "at",
     "is_closed": "fClosed",
+    "opening_balance": "amtOpen",
+    "currency": "hcrnc",
+}
+
+# Currency reference table. ACCOUNTS["currency"] holds a foreign key (hcrnc)
+# into this table; szIsoCode is the 3-letter code (e.g. "USD", "SEK").
+CURRENCIES = {
+    "table": "CRNC",
+    "id": "hcrnc",
+    "iso_code": "szIsoCode",
 }
 
 CATEGORIES = {
@@ -29,13 +39,30 @@ PAYEES = {
     "name": "szFull",
 }
 
+SECURITIES = {
+    "table": "SEC",
+    "id": "hsec",
+    "name": "szFull",
+}
+
 TRANSACTIONS = {
     "table": "TRN",
     "id": "htrn",
     "account_id": "hacct",
     "category_id": "hcat",
-    "payee_id": "hpay",
+    "payee_id": "lHpay",
     "date": "dt",
     "amount": "amt",
-    "memo": "mem",
+    "memo": "mMemo",
+    "security_id": "hsec",
+    "activity": "act",
+}
+
+# Investment detail for a transaction (quantity/unit price of a buy, sell,
+# etc.). One row per investment transaction_id, joined via TRN_INV.htrn.
+TRANSACTION_INVESTMENTS = {
+    "table": "TRN_INV",
+    "id": "htrn",
+    "quantity": "qty",
+    "price": "dPrice",
 }
