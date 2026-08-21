@@ -24,8 +24,8 @@ def test_account_rows_have_add_record_button(qapp, conn):
     window = MainWindow(conn)
     actions_col = window.account_model.COLUMNS.index("Actions")
     container = window.account_view.indexWidget(window.account_model.index(0, actions_col))
-    button_texts = [child.text() for child in container.findChildren(QPushButton)]
-    assert "Add Record" in button_texts
+    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
+    assert "Add Record" in button_tooltips
 
 
 def test_add_record_button_reloads_account_on_accept(qapp, conn, monkeypatch):
@@ -150,9 +150,9 @@ def test_open_account_row_has_close_button(qapp, conn):
     actions_col = window.account_model.COLUMNS.index("Actions")
     # row 1 = Checking, an open account (see conn fixture ordering).
     container = window.account_view.indexWidget(window.account_model.index(1, actions_col))
-    button_texts = [child.text() for child in container.findChildren(QPushButton)]
-    assert "Close" in button_texts
-    assert "Reopen" not in button_texts
+    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
+    assert "Close" in button_tooltips
+    assert "Reopen" not in button_tooltips
 
 
 def test_closed_account_row_has_reopen_button(qapp, conn):
@@ -164,12 +164,14 @@ def test_closed_account_row_has_reopen_button(qapp, conn):
         if window.account_model.account_at(row)[1] == "Old Card"
     )
     container = window.account_view.indexWidget(window.account_model.index(closed_row, actions_col))
-    button_texts = [child.text() for child in container.findChildren(QPushButton)]
-    assert "Reopen" in button_texts
-    assert "Close" not in button_texts
+    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
+    assert "Reopen" in button_tooltips
+    assert "Close" not in button_tooltips
 
 
 def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
     reload_calls = []
     original_reload = MainWindow._reload_accounts
 
@@ -188,6 +190,28 @@ def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
     assert row == (True,)
     assert reload_calls == [True]
     assert window.statusBar().currentMessage() == "Account closed."
+
+
+def test_close_button_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.No)
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+
+    window = MainWindow(conn)
+    reload_calls.clear()
+
+    window._on_toggle_closed_button_clicked(1)  # row 1 = Checking (open, see conn fixture ordering)
+
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (False,)
+    assert reload_calls == []
 
 
 def test_reopen_button_reopens_account_and_reloads(qapp, conn, monkeypatch):

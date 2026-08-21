@@ -1,5 +1,6 @@
 """Qt table models adapting data.py query results for QTableViews."""
 
+import calendar
 from decimal import Decimal
 
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
@@ -81,6 +82,47 @@ def compute_account_value_history(transactions, opening_balance, is_investment):
         )
         history.append((txn_date, total))
     return history
+
+
+def _add_months(base_date, months):
+    month_index = base_date.month - 1 + months
+    year = base_date.year + month_index // 12
+    month = month_index % 12 + 1
+    day = min(base_date.day, calendar.monthrange(year, month)[1])
+    return base_date.replace(year=year, month=month, day=day)
+
+
+def generate_sample_dates(earliest, latest, months=3):
+    """Dates from earliest to latest spaced `months` apart, always ending at latest."""
+    dates = []
+    current = earliest
+    while current < latest:
+        dates.append(current)
+        current = _add_months(current, months)
+    dates.append(latest)
+    return dates
+
+
+def compute_net_worth_series(accounts, sample_dates, to_usd):
+    """Total account value (USD) at each sample date.
+
+    accounts is an iterable of (currency, initial_value, history) tuples,
+    where history is a compute_account_value_history()-style ascending list
+    of (date, value) and initial_value is the value before its first entry
+    (opening balance for cash accounts, zero for investment accounts).
+    """
+    series = []
+    for sample_date in sample_dates:
+        total = Decimal("0")
+        for currency, initial_value, history in accounts:
+            value = initial_value
+            for txn_date, txn_value in history:
+                if txn_date > sample_date:
+                    break
+                value = txn_value
+            total += to_usd(currency, value)
+        series.append((sample_date, total))
+    return series
 
 
 class AccountTableModel(QAbstractTableModel):

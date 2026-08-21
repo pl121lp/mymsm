@@ -11,6 +11,8 @@ from models import (
     TransactionTableModel,
     activity_label,
     compute_account_value_history,
+    compute_net_worth_series,
+    generate_sample_dates,
 )
 
 
@@ -386,3 +388,70 @@ def test_category_transaction_model_row_and_column_count():
     )
     assert model.rowCount() == 1
     assert model.columnCount() == 5
+
+
+def test_generate_sample_dates_steps_by_three_months():
+    dates = generate_sample_dates(date(2024, 1, 10), date(2024, 10, 10))
+    assert dates == [
+        date(2024, 1, 10),
+        date(2024, 4, 10),
+        date(2024, 7, 10),
+        date(2024, 10, 10),
+    ]
+
+
+def test_generate_sample_dates_includes_latest_even_if_not_aligned():
+    dates = generate_sample_dates(date(2024, 1, 1), date(2024, 8, 15))
+    assert dates == [
+        date(2024, 1, 1),
+        date(2024, 4, 1),
+        date(2024, 7, 1),
+        date(2024, 8, 15),
+    ]
+
+
+def test_generate_sample_dates_single_point_when_earliest_equals_latest():
+    assert generate_sample_dates(date(2024, 1, 1), date(2024, 1, 1)) == [date(2024, 1, 1)]
+
+
+def test_generate_sample_dates_clamps_month_end_overflow():
+    # Jan 31 + 3 months has no day 31 in April, so it should clamp to Apr 30.
+    dates = generate_sample_dates(date(2024, 1, 31), date(2024, 4, 30))
+    assert dates == [date(2024, 1, 31), date(2024, 4, 30)]
+
+
+def test_compute_net_worth_series_uses_initial_value_before_first_transaction():
+    accounts = [
+        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))]),
+        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))]),
+    ]
+
+    def to_usd(currency, amount):
+        return amount if currency == "USD" else amount * Decimal("0.1")
+
+    series = compute_net_worth_series(accounts, [date(2024, 1, 1)], to_usd)
+    assert series == [(date(2024, 1, 1), Decimal("100"))]
+
+
+def test_compute_net_worth_series_sums_accounts_converted_to_usd_as_of_each_date():
+    accounts = [
+        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))]),
+        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))]),
+    ]
+
+    def to_usd(currency, amount):
+        return amount if currency == "USD" else amount * Decimal("0.1")
+
+    series = compute_net_worth_series(accounts, [date(2024, 1, 1), date(2024, 2, 1)], to_usd)
+    assert series == [
+        (date(2024, 1, 1), Decimal("100")),
+        (date(2024, 2, 1), Decimal("250")),
+    ]
+
+
+def test_compute_net_worth_series_holds_last_value_flat_after_final_transaction():
+    accounts = [("USD", Decimal("0"), [(date(2024, 1, 10), Decimal("500"))])]
+    series = compute_net_worth_series(
+        accounts, [date(2024, 6, 1)], to_usd=lambda currency, amount: amount
+    )
+    assert series == [(date(2024, 6, 1), Decimal("500"))]

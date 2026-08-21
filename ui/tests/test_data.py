@@ -29,6 +29,12 @@ def test_list_accounts_includes_closed_when_requested(conn):
     ]
 
 
+def test_list_accounts_only_closed_when_requested(conn):
+    assert list_accounts(conn, only_closed=True) == [
+        (2, "Old Card", "Credit", "USD", Decimal("0.00"), True),
+    ]
+
+
 def test_list_accounts_orders_by_account_type_then_name(conn):
     conn.execute(
         "INSERT INTO accounts VALUES "

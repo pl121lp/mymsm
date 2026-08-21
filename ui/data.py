@@ -12,7 +12,7 @@ SELL_ACTIVITY = "2"
 
 
 def list_accounts(
-    conn: duckdb.DuckDBPyConnection, include_closed: bool = False
+    conn: duckdb.DuckDBPyConnection, include_closed: bool = False, only_closed: bool = False
 ) -> list[tuple]:
     query = """
         WITH signed_holdings AS (
@@ -57,7 +57,9 @@ def list_accounts(
         LEFT JOIN investment_value iv ON iv.account_id = a.account_id
     """
     params = [SELL_ACTIVITY, BUY_ACTIVITY, SELL_ACTIVITY, INVESTMENT_ACCOUNT_TYPE]
-    if not include_closed:
+    if only_closed:
+        query += " WHERE a.is_closed = TRUE"
+    elif not include_closed:
         query += " WHERE a.is_closed = FALSE"
     query += """
         ORDER BY CASE a.account_type

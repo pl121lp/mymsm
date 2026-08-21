@@ -1,7 +1,17 @@
-"""Shared QtCharts line-chart builder for time-series widgets."""
+"""Shared QtCharts chart builders for time-series widgets."""
 
-from PySide6.QtCharts import QChart, QDateTimeAxis, QLineSeries, QValueAxis
+from PySide6.QtCharts import (
+    QBarCategoryAxis,
+    QBarSeries,
+    QBarSet,
+    QChart,
+    QDateTimeAxis,
+    QLineSeries,
+    QValueAxis,
+)
 from PySide6.QtCore import QDateTime, Qt
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import QToolTip
 
 
 def build_line_chart(title, series):
@@ -47,4 +57,51 @@ def build_line_chart(title, series):
             QDateTime.fromMSecsSinceEpoch(x_min), QDateTime.fromMSecsSinceEpoch(x_max)
         )
         axis_y.setRange(y_min, y_max)
+    return chart
+
+
+def build_bar_chart(title, categories, values):
+    """Build a single-series bar chart.
+
+    categories is a list of x-axis labels; values is a parallel list of
+    numeric values. Categories aren't drawn on the axis (too dense to be
+    legible when there are many bars) -- instead the category for a bar
+    is shown in a tooltip on hover.
+    """
+    chart = QChart()
+    chart.setTitle(title)
+    chart.legend().setVisible(False)
+
+    bar_set = QBarSet(title)
+    for value in values:
+        bar_set.append(float(value))
+
+    series = QBarSeries()
+    series.append(bar_set)
+
+    def _on_bar_hovered(status, index, _bar_set=None):
+        if status and 0 <= index < len(categories):
+            QToolTip.showText(QCursor.pos(), categories[index])
+        else:
+            QToolTip.hideText()
+
+    series.hovered.connect(_on_bar_hovered)
+    chart.addSeries(series)
+
+    axis_x = QBarCategoryAxis()
+    axis_x.append(categories)
+    axis_x.setLabelsVisible(False)
+    chart.addAxis(axis_x, Qt.AlignBottom)
+    series.attachAxis(axis_x)
+
+    axis_y = QValueAxis()
+    if values:
+        y_min = min(0.0, float(min(values)))
+        y_max = float(max(values))
+        if y_min == y_max:
+            y_min, y_max = y_min - 1, y_max + 1
+        axis_y.setRange(y_min, y_max)
+    chart.addAxis(axis_y, Qt.AlignLeft)
+    series.attachAxis(axis_y)
+
     return chart

@@ -39,6 +39,7 @@ from models import (
     compute_account_value_history,
     format_currency,
 )
+from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
 
@@ -84,7 +85,7 @@ class MainWindow(QMainWindow):
         rate_row.addWidget(QLabel("USD"))
         rate_row.addStretch()
 
-        self.show_closed_checkbox = QCheckBox("Show closed accounts")
+        self.show_closed_checkbox = QCheckBox("Show only closed accounts")
         self.show_closed_checkbox.stateChanged.connect(self._reload_accounts)
 
         self.new_account_button = QPushButton("New Account")
@@ -180,10 +181,15 @@ class MainWindow(QMainWindow):
             on_transaction_changed=self._refresh_after_write,
         )
 
+        self.reports_pane = ReportsPane(
+            self._conn, self.statusBar().showMessage, to_usd=self.account_model.to_usd,
+        )
+
         tabs = QTabWidget()
         tabs.addTab(splitter, "Accounts")
         tabs.addTab(dictionaries_tabs, "Dictionaries")
         tabs.addTab(self.search_pane, "Search")
+        tabs.addTab(self.reports_pane, "Reports")
         self.setCentralWidget(tabs)
 
         self._reload_accounts()
@@ -201,9 +207,9 @@ class MainWindow(QMainWindow):
         self._update_total_label()
 
     def _reload_accounts(self):
-        include_closed = self.show_closed_checkbox.isChecked()
+        only_closed = self.show_closed_checkbox.isChecked()
         try:
-            accounts = data.list_accounts(self._conn, include_closed=include_closed)
+            accounts = data.list_accounts(self._conn, only_closed=only_closed)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to load accounts: {exc}")
             return
@@ -224,28 +230,33 @@ class MainWindow(QMainWindow):
             layout.setContentsMargins(2, 0, 2, 0)
             layout.setSpacing(4)
 
-            details_button = QPushButton("Details")
+            details_button = QPushButton("D")
+            details_button.setToolTip("Details")
             details_button.setStyleSheet(ROW_BUTTON_STYLE)
             details_button.clicked.connect(partial(self._on_details_button_clicked, row))
             layout.addWidget(details_button)
 
-            transactions_button = QPushButton("Transactions")
+            transactions_button = QPushButton("T")
+            transactions_button.setToolTip("Transactions")
             transactions_button.setStyleSheet(ROW_BUTTON_STYLE)
             transactions_button.clicked.connect(partial(self._on_transactions_button_clicked, row))
             layout.addWidget(transactions_button)
 
-            value_button = QPushButton("Value")
+            value_button = QPushButton("V")
+            value_button.setToolTip("Value")
             value_button.setStyleSheet(ROW_BUTTON_STYLE)
             value_button.clicked.connect(partial(self._on_value_button_clicked, row))
             layout.addWidget(value_button)
 
-            add_record_button = QPushButton("Add Record")
+            add_record_button = QPushButton("A")
+            add_record_button.setToolTip("Add Record")
             add_record_button.setStyleSheet(ROW_BUTTON_STYLE)
             add_record_button.clicked.connect(partial(self._on_add_record_button_clicked, row))
             layout.addWidget(add_record_button)
 
             _, _, _, _, _, is_closed = self.account_model.account_at(row)
-            toggle_closed_button = QPushButton("Reopen" if is_closed else "Close")
+            toggle_closed_button = QPushButton("R" if is_closed else "C")
+            toggle_closed_button.setToolTip("Reopen" if is_closed else "Close")
             toggle_closed_button.setStyleSheet(ROW_BUTTON_STYLE)
             toggle_closed_button.clicked.connect(partial(self._on_toggle_closed_button_clicked, row))
             layout.addWidget(toggle_closed_button)
@@ -323,9 +334,19 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Account added.")
 
     def _on_toggle_closed_button_clicked(self, row):
-        account_id, _name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
+        account_id, name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
             row
         )
+        if not is_closed:
+            reply = QMessageBox.question(
+                self,
+                "Close Account",
+                f"Close '{name}'?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if reply != QMessageBox.Yes:
+                return
         writes.set_account_closed(self._conn, account_id, not is_closed)
         self._reload_accounts()
         self.statusBar().showMessage("Account reopened." if is_closed else "Account closed.")
