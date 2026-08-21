@@ -91,11 +91,23 @@ in the table but don't yet affect the computed value, so accounts whose
 shares mostly came in through those (e.g. RSU grants) will show an
 undercounted value. See `ACTIVITY_LABELS` in `ui/models.py`.
 
-The app also has a "Dictionaries" tab with "Categories" and "Investments"
-sub-tabs. Categories shows a list of category names; selecting one shows a
-table of that category's transactions across all accounts. Investments
-shows a list of securities; selecting one shows two charts — price over
-time, and cumulative quantity held over time, per account.
+The app also has a "Dictionaries" tab with "Categories", "Payees", and
+"Investments" sub-tabs. Categories shows a list of category names; selecting
+one shows a table of that category's transactions across all accounts.
+Payees shows a list of payee names; selecting one shows its transactions.
+Investments shows a list of securities; selecting one shows two charts —
+price over time, and cumulative quantity held over time, per account.
+
+Statement imports often produce many near-duplicate payees for the same
+merchant (store-location suffixes, order/confirmation codes, or a generic
+"Advance "/"Withdrawal " prefix Money adds to some transaction types). The
+Payees sub-tab has a "Merge Duplicates…" button that scans for these,
+proposes canonical groupings for review (each group and each variant can be
+unchecked, and the canonical name can be edited), and applies whatever you
+accept. This never modifies `money.duckdb` — the tool stays read-only —
+merges are recorded in a sibling `payee_aliases.json` file (also
+git-ignored, since it reflects your personal payee data) and applied to the
+payee list and transaction lookups at read time.
 
 The same caveat above about only Buy/Sell activity being understood well
 enough to affect share counts also applies to the quantity chart: a

@@ -5,7 +5,10 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QListView,
+    QMessageBox,
+    QPushButton,
     QSplitter,
     QTableView,
     QVBoxLayout,
@@ -13,8 +16,15 @@ from PySide6.QtWidgets import (
 )
 
 import data
+import payee_aliases
 from charts import build_line_chart
-from models import CategoryTransactionTableModel, DictionaryListModel
+from models import (
+    CategoryTransactionTableModel,
+    DictionaryListModel,
+    PayeeTransactionTableModel,
+)
+from payee_merge import find_merge_groups
+from payee_merge_dialog import PayeeMergeDialog
 
 
 class CategoriesPane(QWidget):
@@ -67,6 +77,117 @@ class CategoriesPane(QWidget):
             return
         self.detail_model.set_transactions(transactions)
         self.detail_view.resizeColumnsToContents()
+
+
+class PayeesPane(QWidget):
+    def __init__(self, conn, report_error, parent=None):
+        super().__init__(parent)
+        self._conn = conn
+        self._report_error = report_error
+        self._alias_groups = payee_aliases.load_aliases()
+        self._alias_names = payee_aliases.load_canonical_names()
+
+        self.list_model = DictionaryListModel()
+        self.detail_model = PayeeTransactionTableModel()
+
+        self.merge_button = QPushButton("Merge Duplicates…")
+        self.merge_button.clicked.connect(self._on_merge_clicked)
+
+        self.list_view = QListView()
+        self.list_view.setModel(self.list_model)
+        self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
+
+        self.detail_view = QTableView()
+        self.detail_view.setModel(self.detail_model)
+        self.detail_view.horizontalHeader().setStretchLastSection(True)
+
+        list_pane = QWidget()
+        list_layout = QVBoxLayout(list_pane)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.merge_button)
+        list_layout.addWidget(self.list_view)
+
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.addWidget(list_pane)
+        splitter.addWidget(self.detail_view)
+        splitter.setStretchFactor(0, 1)
+        splitter.setStretchFactor(1, 2)
+
+        layout = QVBoxLayout(self)
+        layout.addWidget(splitter)
+
+        self._reload()
+
+    def _reload(self):
+        try:
+            payees = data.list_payees(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load payees: {exc}")
+            return
+        merged = payee_aliases.apply_aliases(payees, self._alias_groups, self._alias_names)
+        self.list_model.set_items(merged)
+
+    def _on_selected(self, selected=None, deselected=None):
+        indexes = self.list_view.selectionModel().selectedIndexes()
+        if not indexes:
+            self.detail_model.set_transactions([])
+            return
+        payee_id = self.list_model.id_at(indexes[0].row())
+        payee_ids = payee_aliases.resolve_payee_ids(payee_id, self._alias_groups)
+        try:
+            transactions = data.list_payee_transactions(self._conn, payee_ids)
+        except Exception as exc:
+            self._report_error(f"Failed to load payee transactions: {exc}")
+            return
+        self.detail_model.set_transactions(transactions)
+        self.detail_view.resizeColumnsToContents()
+
+    def _on_merge_clicked(self):
+        try:
+            payees = data.list_payees(self._conn)
+            txn_counts = data.count_transactions_by_payee(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load payees: {exc}")
+            return
+
+        already_merged = {
+            payee_id for members in self._alias_groups.values() for payee_id in members
+        }
+        candidates = [row for row in payees if row[0] not in already_merged]
+
+        self._report_error("Scanning payee names for duplicates…")
+        QApplication.processEvents()
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            groups = find_merge_groups(candidates, txn_counts)
+        finally:
+            QApplication.restoreOverrideCursor()
+        # Drop groups whose canonical payee already stands for a prior merge --
+        # they'd need to compose two overlays, which isn't supported yet.
+        groups = [g for g in groups if g.canonical_payee_id not in self._alias_groups]
+
+        if not groups:
+            QMessageBox.information(self, "Merge Duplicate Payees", "No duplicate payees found.")
+            self._report_error("")
+            return
+
+        dialog = PayeeMergeDialog(groups, parent=self)
+        if dialog.exec() != PayeeMergeDialog.Accepted:
+            self._report_error("")
+            return
+
+        new_groups, new_names = dialog.accepted_groups_and_names()
+        if not new_groups:
+            self._report_error("")
+            return
+
+        self._alias_groups = payee_aliases.merge_groups(self._alias_groups, new_groups)
+        self._alias_names.update(new_names)
+        payee_aliases.save_aliases(self._alias_groups, self._alias_names)
+
+        self._report_error(f"Merged {len(new_groups)} payee group(s).")
+        self._reload()
 
 
 class InvestmentsPane(QWidget):

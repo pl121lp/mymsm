@@ -2,9 +2,11 @@ from datetime import date
 from decimal import Decimal
 
 from data import (
+    count_transactions_by_payee,
     list_accounts,
     list_categories,
     list_category_transactions,
+    list_payee_transactions,
     list_securities,
     list_security_history,
     list_transactions,
@@ -111,3 +113,18 @@ def test_list_security_history_computes_per_account_running_total(dict_conn):
 
 def test_list_security_history_unknown_security_returns_empty(dict_conn):
     assert list_security_history(dict_conn, security_id=999) == []
+
+
+def test_count_transactions_by_payee_ignores_null_payee(dict_conn):
+    assert count_transactions_by_payee(dict_conn) == {100: 1, 101: 1}
+
+
+def test_list_payee_transactions_accepts_multiple_ids(dict_conn):
+    assert list_payee_transactions(dict_conn, [100, 101]) == [
+        (1000, date(2024, 3, 15), "Checking", "Groceries", "weekly shop", Decimal("-52.30")),
+        (1001, date(2024, 3, 10), "Savings", "Groceries", "snacks", Decimal("-20.00")),
+    ]
+
+
+def test_list_payee_transactions_empty_ids_returns_empty(dict_conn):
+    assert list_payee_transactions(dict_conn, []) == []

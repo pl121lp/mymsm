@@ -114,6 +114,37 @@ def list_category_transactions(
     return conn.execute(query, [category_id]).fetchall()
 
 
+def list_payees(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    return conn.execute(
+        "SELECT payee_id, name FROM payees ORDER BY name"
+    ).fetchall()
+
+
+def list_payee_transactions(
+    conn: duckdb.DuckDBPyConnection, payee_ids: list[int]
+) -> list[tuple]:
+    if not payee_ids:
+        return []
+    placeholders = ",".join("?" for _ in payee_ids)
+    query = f"""
+        SELECT t.transaction_id, t.txn_date, a.name, c.name, t.memo, t.amount
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        LEFT JOIN categories c ON t.category_id = c.category_id
+        WHERE t.payee_id IN ({placeholders})
+        ORDER BY t.txn_date DESC
+    """
+    return conn.execute(query, list(payee_ids)).fetchall()
+
+
+def count_transactions_by_payee(conn: duckdb.DuckDBPyConnection) -> dict[int, int]:
+    rows = conn.execute(
+        "SELECT payee_id, COUNT(*) FROM transactions "
+        "WHERE payee_id IS NOT NULL GROUP BY payee_id"
+    ).fetchall()
+    return dict(rows)
+
+
 def list_securities(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(
         "SELECT security_id, name FROM securities ORDER BY name"

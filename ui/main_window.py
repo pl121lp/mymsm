@@ -27,7 +27,7 @@ from PySide6.QtWidgets import (
 import data
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE
-from dictionaries_tab import CategoriesPane, InvestmentsPane
+from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
 from models import (
     AccountTableModel,
     TransactionTableModel,
@@ -82,7 +82,7 @@ class MainWindow(QMainWindow):
 
         self.account_view = QTableView()
         self.account_view.setModel(self.account_model)
-        self.account_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Stretch)
+        self.account_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.account_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.account_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.account_view.selectionModel().selectionChanged.connect(self._on_account_selected)
@@ -145,6 +145,9 @@ class MainWindow(QMainWindow):
         dictionaries_tabs = QTabWidget()
         dictionaries_tabs.addTab(
             CategoriesPane(self._conn, self.statusBar().showMessage), "Categories"
+        )
+        dictionaries_tabs.addTab(
+            PayeesPane(self._conn, self.statusBar().showMessage), "Payees"
         )
         dictionaries_tabs.addTab(
             InvestmentsPane(self._conn, self.statusBar().showMessage), "Investments"

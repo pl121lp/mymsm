@@ -2,6 +2,7 @@
 *.mbf
 data/raw/
 money.duckdb
+payee_aliases.json
 .venv/
 extract-mny/target/
 __pycache__/
