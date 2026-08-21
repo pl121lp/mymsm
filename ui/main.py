@@ -24,7 +24,7 @@ def main():
         )
         sys.exit(1)
 
-    conn = duckdb.connect(str(DB_PATH), read_only=True)
+    conn = duckdb.connect(str(DB_PATH))
     window = MainWindow(conn)
     window.show()
     sys.exit(app.exec())

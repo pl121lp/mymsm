@@ -77,9 +77,19 @@ file, you must use the environment variable to avoid an error.
 
 Opens a desktop window (PySide6) listing accounts on the left; selecting
 one shows its transactions on the right. Closed accounts are hidden by
-default — check "Show closed accounts" to see them. Read-only: this tool
-does not modify `money.duckdb`. Requires `money.duckdb` to already exist
-(run `./extract-data-to-db.sh` first if it doesn't).
+default — check "Show closed accounts" to see them. Requires
+`money.duckdb` to already exist (run `./extract-data-to-db.sh` first if it
+doesn't).
+
+Each account row has an "Add Record" button that opens a form for adding a
+single transaction to that account (Payee/Category for cash accounts;
+Security/Activity/Quantity/Price for investment accounts). Typing a new
+Payee, Category, or Security name adds it to the corresponding dictionary
+automatically; existing names autocomplete as you type. This is the only
+place the app writes to `money.duckdb` — everything else remains
+read-only. Note: re-running `./extract-data-to-db.sh` rebuilds
+`money.duckdb` from the `.mny` file from scratch, so manually-added
+records won't survive a re-extraction.
 
 For investment accounts, the transaction table shows the security name,
 activity, quantity, and price instead of payee/category. The account's
