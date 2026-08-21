@@ -24,7 +24,17 @@ def main():
         )
         sys.exit(1)
 
-    conn = duckdb.connect(str(DB_PATH))
+    try:
+        conn = duckdb.connect(str(DB_PATH))
+    except duckdb.IOException as exc:
+        QMessageBox.critical(
+            None,
+            "Money Browser",
+            f"Could not open {DB_PATH}:\n{exc}\n\n"
+            "It may be locked by another running instance of this app.",
+        )
+        sys.exit(1)
+
     window = MainWindow(conn)
     window.show()
     sys.exit(app.exec())

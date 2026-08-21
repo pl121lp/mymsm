@@ -69,3 +69,28 @@ def test_add_record_button_does_nothing_on_cancel(qapp, conn, monkeypatch):
     window._on_add_record_button_clicked(1)
 
     assert reload_calls == []
+
+
+def test_add_record_button_reloads_dictionaries_pane(qapp, conn, monkeypatch):
+    import add_record_dialog
+    import writes
+    from datetime import date
+    from decimal import Decimal
+
+    def fake_exec(self):
+        writes.add_transaction(
+            self._conn, self._account_id, date(2024, 4, 1), Decimal("-5.00"),
+            payee_name="Brand New Payee",
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window._on_add_record_button_clicked(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+
+    payee_names = [
+        window.payees_pane.list_model.data(window.payees_pane.list_model.index(r))
+        for r in range(window.payees_pane.list_model.rowCount())
+    ]
+    assert "Brand New Payee" in payee_names

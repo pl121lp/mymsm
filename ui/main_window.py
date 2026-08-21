@@ -157,16 +157,14 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
+        self.categories_pane = CategoriesPane(self._conn, self.statusBar().showMessage)
+        self.payees_pane = PayeesPane(self._conn, self.statusBar().showMessage)
+        self.investments_pane = InvestmentsPane(self._conn, self.statusBar().showMessage)
+
         dictionaries_tabs = QTabWidget()
-        dictionaries_tabs.addTab(
-            CategoriesPane(self._conn, self.statusBar().showMessage), "Categories"
-        )
-        dictionaries_tabs.addTab(
-            PayeesPane(self._conn, self.statusBar().showMessage), "Payees"
-        )
-        dictionaries_tabs.addTab(
-            InvestmentsPane(self._conn, self.statusBar().showMessage), "Investments"
-        )
+        dictionaries_tabs.addTab(self.categories_pane, "Categories")
+        dictionaries_tabs.addTab(self.payees_pane, "Payees")
+        dictionaries_tabs.addTab(self.investments_pane, "Investments")
 
         tabs = QTabWidget()
         tabs.addTab(splitter, "Accounts")
@@ -286,6 +284,9 @@ class MainWindow(QMainWindow):
         if dialog.exec() != AddRecordDialog.Accepted:
             return
         self._reload_accounts()
+        self.categories_pane._reload()
+        self.payees_pane._reload()
+        self.investments_pane._reload()
         self.account_view.selectRow(row)
         self._on_account_selected()
         self.statusBar().showMessage("Record added.")
