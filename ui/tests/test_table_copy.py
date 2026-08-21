@@ -1,4 +1,45 @@
-from table_copy import build_clipboard_text
+from PySide6.QtGui import QStandardItem, QStandardItemModel
+from PySide6.QtWidgets import QTableView
+
+from table_copy import _build_context_menu, build_clipboard_text
+
+
+def _make_view(rows):
+    model = QStandardItemModel(len(rows), 1)
+    for row, value in enumerate(rows):
+        model.setItem(row, 0, QStandardItem(value))
+    view = QTableView()
+    view.setModel(model)
+    view.resize(200, 200)
+    return view
+
+
+def test_context_menu_has_no_edit_action_when_on_edit_not_given(qapp):
+    view = _make_view(["a"])
+    pos = view.visualRect(view.model().index(0, 0)).center()
+    menu = _build_context_menu(view, pos)
+    assert [action.text() for action in menu.actions()] == ["Copy"]
+
+
+def test_context_menu_edit_action_calls_on_edit_with_clicked_row(qapp):
+    view = _make_view(["a", "b", "c"])
+    calls = []
+    pos = view.visualRect(view.model().index(1, 0)).center()
+
+    menu = _build_context_menu(view, pos, on_edit=lambda row: calls.append(row))
+
+    edit_action = next(a for a in menu.actions() if a.text() == "Edit Record")
+    edit_action.trigger()
+    assert calls == [1]
+
+
+def test_context_menu_has_no_edit_action_when_click_is_outside_any_row(qapp):
+    view = _make_view(["a"])
+    pos = view.viewport().rect().bottomRight()
+
+    menu = _build_context_menu(view, pos, on_edit=lambda row: None)
+
+    assert [action.text() for action in menu.actions()] == ["Copy"]
 
 
 def test_single_cell_returns_its_text():

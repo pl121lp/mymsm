@@ -94,3 +94,71 @@ def test_add_record_button_reloads_dictionaries_pane(qapp, conn, monkeypatch):
         for r in range(window.payees_pane.list_model.rowCount())
     ]
     assert "Brand New Payee" in payee_names
+
+
+def test_transaction_double_click_opens_edit_dialog_for_clicked_transaction(qapp, conn, monkeypatch):
+    import add_record_dialog
+
+    seen_transactions = []
+    original_init = add_record_dialog.AddRecordDialog.__init__
+
+    def spy_init(self, conn, account_id, account_type, transaction=None, parent=None):
+        seen_transactions.append(transaction)
+        original_init(self, conn, account_id, account_type, transaction=transaction, parent=parent)
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "__init__", spy_init)
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+
+    window._on_transaction_double_clicked(window.transaction_model.index(0, 0))
+
+    assert len(seen_transactions) == 1
+    assert seen_transactions[0] == window.transaction_model.transaction_at(0)
+
+
+def test_transaction_edit_reloads_and_shows_status_on_accept(qapp, conn, monkeypatch):
+    import add_record_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    reload_calls.clear()  # drop the reload from selecting the row
+
+    window._on_transaction_double_clicked(window.transaction_model.index(0, 0))
+
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Record updated."
+
+
+def test_transaction_edit_does_nothing_on_cancel(qapp, conn, monkeypatch):
+    import add_record_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    reload_calls.clear()
+
+    window._on_transaction_double_clicked(window.transaction_model.index(0, 0))
+
+    assert reload_calls == []
+    assert window.statusBar().currentMessage() != "Record updated."

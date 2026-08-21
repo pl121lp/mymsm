@@ -98,7 +98,8 @@ class MainWindow(QMainWindow):
         self.transaction_view.setModel(self.transaction_model)
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
         self.transaction_view.setSortingEnabled(True)
-        enable_cell_copy(self.transaction_view)
+        self.transaction_view.doubleClicked.connect(self._on_transaction_double_clicked)
+        enable_cell_copy(self.transaction_view, on_edit=self._edit_transaction)
 
         transactions_page = QWidget()
         transactions_layout = QVBoxLayout(transactions_page)
@@ -290,6 +291,29 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(row)
         self._on_account_selected()
         self.statusBar().showMessage("Record added.")
+
+    def _on_transaction_double_clicked(self, index):
+        self._edit_transaction(index.row())
+
+    def _edit_transaction(self, row):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        account_row = indexes[0].row()
+        account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
+            account_row
+        )
+        transaction = self.transaction_model.transaction_at(row)
+        dialog = AddRecordDialog(self._conn, account_id, account_type, transaction=transaction, parent=self)
+        if dialog.exec() != AddRecordDialog.Accepted:
+            return
+        self._reload_accounts()
+        self.categories_pane._reload()
+        self.payees_pane._reload()
+        self.investments_pane._reload()
+        self.account_view.selectRow(account_row)
+        self._on_account_selected()
+        self.statusBar().showMessage("Record updated.")
 
     def _on_account_selected(self, selected=None, deselected=None):
         self.right_stack.setCurrentIndex(TRANSACTIONS_PAGE)

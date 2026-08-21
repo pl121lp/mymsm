@@ -68,3 +68,49 @@ def add_transaction(
         raise
     conn.commit()
     return transaction_id
+
+
+def update_transaction(
+    conn,
+    transaction_id,
+    txn_date,
+    amount,
+    memo=None,
+    payee_name=None,
+    category_name=None,
+    security_name=None,
+    activity=None,
+    quantity=None,
+    price=None,
+):
+    """Updates an existing transaction row in place, auto-creating any named
+    dictionary entry (payee/category/security) that doesn't already exist by
+    name (case-insensitive). Returns transaction_id. Rolls back entirely (no
+    partial dictionary rows) if the update itself fails."""
+    conn.begin()
+    try:
+        payee_id = _find_or_create(conn, "payees", "payee_id", payee_name) if payee_name else None
+        category_id = (
+            _find_or_create(conn, "categories", "category_id", category_name)
+            if category_name
+            else None
+        )
+        security_id = (
+            _find_or_create(conn, "securities", "security_id", security_name)
+            if security_name
+            else None
+        )
+        conn.execute(
+            "UPDATE transactions SET category_id = ?, payee_id = ?, txn_date = ?, amount = ?, "
+            "memo = ?, security_id = ?, activity = ?, quantity = ?, price = ? "
+            "WHERE transaction_id = ?",
+            [
+                category_id, payee_id, txn_date, amount,
+                memo, security_id, activity, quantity, price, transaction_id,
+            ],
+        )
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return transaction_id

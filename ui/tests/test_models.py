@@ -152,6 +152,11 @@ def test_switching_back_to_non_investment_restores_default_columns():
     assert _data(model, 0, 1) == "Store A"
 
 
+def test_transaction_at_returns_full_row_tuple():
+    model = TransactionTableModel([NON_INVESTMENT_ROW])
+    assert model.transaction_at(0) == NON_INVESTMENT_ROW
+
+
 def test_sort_by_amount_ascending():
     rows = [
         (1, date(2024, 1, 1), "Store A", "Groceries", "m1", Decimal("50.00"), None, None, None, None),

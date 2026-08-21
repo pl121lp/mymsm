@@ -173,6 +173,9 @@ class TransactionTableModel(QAbstractTableModel):
         self._is_investment = is_investment
         self.endResetModel()
 
+    def transaction_at(self, row):
+        return self._transactions[row]
+
     @property
     def _columns(self):
         return self.INVESTMENT_COLUMNS if self._is_investment else self.DEFAULT_COLUMNS

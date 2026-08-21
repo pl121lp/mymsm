@@ -31,10 +31,20 @@ def _copy_selection(view):
         QGuiApplication.clipboard().setText(text)
 
 
-def _show_context_menu(view, pos):
+def _build_context_menu(view, pos, on_edit=None):
     menu = QMenu(view)
     copy_action = menu.addAction("Copy")
     copy_action.triggered.connect(lambda: _copy_selection(view))
+    if on_edit is not None:
+        index = view.indexAt(pos)
+        if index.isValid():
+            edit_action = menu.addAction("Edit Record")
+            edit_action.triggered.connect(lambda: on_edit(index.row()))
+    return menu
+
+
+def _show_context_menu(view, pos, on_edit=None):
+    menu = _build_context_menu(view, pos, on_edit)
     menu.exec(view.viewport().mapToGlobal(pos))
 
 
@@ -43,10 +53,12 @@ def enable_label_copy(label):
     label.setTextInteractionFlags(Qt.TextSelectableByMouse)
 
 
-def enable_cell_copy(view):
-    """Wire up right-click 'Copy' and Ctrl+C on a QTableView's cells."""
+def enable_cell_copy(view, on_edit=None):
+    """Wire up right-click 'Copy' (plus 'Edit Record' when `on_edit` is given)
+    and Ctrl+C on a QTableView's cells. `on_edit`, if given, is called with
+    the clicked row when "Edit Record" is chosen."""
     view.setContextMenuPolicy(Qt.CustomContextMenu)
-    view.customContextMenuRequested.connect(lambda pos: _show_context_menu(view, pos))
+    view.customContextMenuRequested.connect(lambda pos: _show_context_menu(view, pos, on_edit))
 
     shortcut = QShortcut(QKeySequence.Copy, view)
     shortcut.setContext(Qt.WidgetWithChildrenShortcut)
