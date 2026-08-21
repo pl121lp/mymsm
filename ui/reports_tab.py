@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QListView,
     QPushButton,
     QSplitter,
+    QTableView,
     QVBoxLayout,
     QWidget,
 )
@@ -22,14 +23,20 @@ from charts import build_bar_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from models import (
     DictionaryListModel,
+    SpendingByCategoryTableModel,
     compute_account_value_history,
     compute_net_worth_series,
+    compute_spending_by_category,
     generate_sample_dates,
 )
 from table_copy import enable_cell_copy
 
 NET_WORTH_REPORT_ID = "net_worth_over_time"
-REPORTS = [(NET_WORTH_REPORT_ID, "Net worth over time")]
+SPENDING_BY_CATEGORY_REPORT_ID = "spending_by_category"
+REPORTS = [
+    (NET_WORTH_REPORT_ID, "Net worth over time"),
+    (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
+]
 
 
 def _to_qdate(python_date):
@@ -42,7 +49,9 @@ class ReportsPane(QWidget):
         self._conn = conn
         self._report_error = report_error
         self._to_usd = to_usd
+        self._active_report_id = None
         self._net_worth_accounts = []
+        self._category_spending = []
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -53,6 +62,13 @@ class ReportsPane(QWidget):
 
         self.chart_view = QChartView()
         self.chart_view.setRenderHint(QPainter.Antialiasing)
+
+        self.category_table_model = SpendingByCategoryTableModel()
+        self.category_table_view = QTableView()
+        self.category_table_view.setModel(self.category_table_model)
+        self.category_table_view.horizontalHeader().setStretchLastSection(True)
+        self.category_table_view.setVisible(False)
+        enable_cell_copy(self.category_table_view)
 
         self.range_label = QLabel()
 
@@ -75,6 +91,7 @@ class ReportsPane(QWidget):
         chart_layout = QVBoxLayout(chart_panel)
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(self.chart_view)
+        chart_layout.addWidget(self.category_table_view)
         chart_layout.addWidget(self.range_label)
         chart_layout.addLayout(range_row)
 
@@ -90,12 +107,19 @@ class ReportsPane(QWidget):
     def _on_selected(self, selected=None, deselected=None):
         indexes = self.list_view.selectionModel().selectedIndexes()
         if not indexes:
+            self._active_report_id = None
             self.chart_view.setChart(QChart())
+            self.category_table_model.set_categories([])
             self.range_label.setText("")
             return
         report_id = self.list_model.id_at(indexes[0].row())
+        self._active_report_id = report_id
+        self.chart_view.setVisible(report_id == NET_WORTH_REPORT_ID)
+        self.category_table_view.setVisible(report_id == SPENDING_BY_CATEGORY_REPORT_ID)
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
+        elif report_id == SPENDING_BY_CATEGORY_REPORT_ID:
+            self._load_spending_by_category_report()
 
     def _load_net_worth_report(self):
         try:
@@ -140,14 +164,22 @@ class ReportsPane(QWidget):
         self._render_net_worth_chart(earliest, latest)
 
     def _on_range_updated(self):
-        if not self._net_worth_accounts:
-            return
-        start = self.start_date_edit.date().toPython()
-        end = self.end_date_edit.date().toPython()
-        if start > end:
-            self._report_error("Start date must be on or before end date.")
-            return
-        self._render_net_worth_chart(start, end)
+        if self._active_report_id == NET_WORTH_REPORT_ID:
+            if not self._net_worth_accounts:
+                return
+            start = self.start_date_edit.date().toPython()
+            end = self.end_date_edit.date().toPython()
+            if start > end:
+                self._report_error("Start date must be on or before end date.")
+                return
+            self._render_net_worth_chart(start, end)
+        elif self._active_report_id == SPENDING_BY_CATEGORY_REPORT_ID:
+            start = self.start_date_edit.date().toPython()
+            end = self.end_date_edit.date().toPython()
+            if start > end:
+                self._report_error("Start date must be on or before end date.")
+                return
+            self._render_spending_by_category_table(start, end)
 
     def _render_net_worth_chart(self, start, end):
         sample_dates = generate_sample_dates(start, end)
@@ -156,4 +188,38 @@ class ReportsPane(QWidget):
         values = [total for _, total in series]
         chart = build_bar_chart("Net Worth Over Time (USD)", categories, values)
         self.chart_view.setChart(chart)
+        self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+
+    def _load_spending_by_category_report(self):
+        try:
+            transactions = data.list_category_spending(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load spending by category report: {exc}")
+            return
+
+        if not transactions:
+            self._category_spending = []
+            self.category_table_model.set_categories([])
+            self.range_label.setText("")
+            self._report_error("No categorized transactions available for spending report.")
+            return
+
+        self._category_spending = transactions
+        earliest = min(txn_date for _, _, txn_date, _, _ in transactions)
+        latest = max(txn_date for _, _, txn_date, _, _ in transactions)
+
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        self.start_date_edit.setDate(_to_qdate(earliest))
+        self.end_date_edit.setDate(_to_qdate(latest))
+        self.start_date_edit.blockSignals(False)
+        self.end_date_edit.blockSignals(False)
+
+        self._render_spending_by_category_table(earliest, latest)
+
+    def _render_spending_by_category_table(self, start, end):
+        categories = compute_spending_by_category(
+            self._category_spending, start, end, self._to_usd
+        )
+        self.category_table_model.set_categories(categories)
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")

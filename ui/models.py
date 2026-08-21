@@ -125,6 +125,53 @@ def compute_net_worth_series(accounts, sample_dates, to_usd):
     return series
 
 
+def compute_spending_by_category(transactions, start, end, to_usd):
+    """Total spending (USD) per category within [start, end], highest first.
+
+    `transactions` are (category_id, category_name, txn_date, amount, currency)
+    rows, e.g. from data.list_category_spending(). Only negative amounts (money
+    out) count as spending; positive amounts (refunds, income posted to a
+    spending category) are ignored.
+    """
+    totals = {}
+    for _category_id, category_name, txn_date, amount, currency in transactions:
+        if txn_date < start or txn_date > end or amount >= 0:
+            continue
+        totals[category_name] = totals.get(category_name, Decimal("0")) + to_usd(currency, -amount)
+    return sorted(totals.items(), key=lambda item: item[1], reverse=True)
+
+
+class SpendingByCategoryTableModel(QAbstractTableModel):
+    COLUMNS = ["Category", "Spending (USD)"]
+
+    def __init__(self, categories=None, parent=None):
+        super().__init__(parent)
+        self._categories = categories or []
+
+    def set_categories(self, categories):
+        self.beginResetModel()
+        self._categories = categories
+        self.endResetModel()
+
+    def rowCount(self, parent=None):
+        return len(self._categories)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        category_name, total = self._categories[index.row()]
+        values = [category_name, format_currency(total)]
+        return values[index.column()]
+
+
 class AccountTableModel(QAbstractTableModel):
     COLUMNS = ["Name", "Type", "Currency", "Balance", "Actions"]
 

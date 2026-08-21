@@ -7,8 +7,18 @@ from reports_tab import REPORTS, ReportsPane
 
 def _select_net_worth_report(pane):
     pane.list_view.selectionModel().select(
-        pane.list_model.index(0, 0), QItemSelectionModel.Select
+        pane.list_model.index(0, 0), QItemSelectionModel.ClearAndSelect
     )
+
+
+def _select_spending_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(1, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _table_cell(view, row, col):
+    return view.model().data(view.model().index(row, col), Qt.DisplayRole)
 
 
 def test_reports_list_view_supports_copy(qapp, dict_conn):
@@ -20,6 +30,11 @@ def test_reports_list_shows_net_worth_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
     assert pane.list_model.data(pane.list_model.index(0, 0)) == "Net worth over time"
+
+
+def test_reports_list_shows_spending_by_category_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.data(pane.list_model.index(1, 0)) == "Spending by category"
 
 
 def test_selecting_net_worth_report_draws_a_bar_chart(qapp, dict_conn):
@@ -67,3 +82,63 @@ def test_updating_range_with_start_after_end_reports_error_and_keeps_chart(qapp,
     assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-15"
     bar_set_after = pane.chart_view.chart().series()[0].barSets()[0]
     assert bar_set_after.count() == count_before
+
+
+def test_selecting_spending_report_shows_table_and_hides_chart(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert pane.chart_view.isVisible()
+
+    _select_spending_report(pane)
+    assert pane.category_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+
+
+def test_selecting_spending_report_defaults_date_range_to_full_history(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+    assert pane.start_date_edit.date().toPython() == date(2024, 3, 1)
+    assert pane.end_date_edit.date().toPython() == date(2024, 3, 15)
+    assert pane.range_label.text() == "Showing 2024-03-01 to 2024-03-15"
+
+
+def test_selecting_spending_report_sorts_categories_by_spending_descending(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    view = pane.category_table_view
+    assert view.model().rowCount() == 2
+    assert _table_cell(view, 0, 0) == "Utilities"
+    assert _table_cell(view, 0, 1) == "75.00"
+    assert _table_cell(view, 1, 0) == "Groceries"
+    assert _table_cell(view, 1, 1) == "72.30"
+
+
+def test_updating_range_recomputes_spending_table_for_narrower_window(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 3, 12))
+    pane.end_date_edit.setDate(QDate(2024, 3, 31))
+    pane.update_range_button.click()
+
+    assert pane.range_label.text() == "Showing 2024-03-12 to 2024-03-31"
+    view = pane.category_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 0) == "Groceries"
+    assert _table_cell(view, 0, 1) == "52.30"
+
+
+def test_updating_spending_range_with_start_after_end_reports_error_and_keeps_table(qapp, dict_conn):
+    errors = []
+    pane = ReportsPane(dict_conn, report_error=errors.append, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 3, 15))
+    pane.end_date_edit.setDate(QDate(2024, 3, 1))
+    pane.update_range_button.click()
+
+    assert errors == ["Start date must be on or before end date."]
+    assert pane.range_label.text() == "Showing 2024-03-01 to 2024-03-15"
+    assert pane.category_table_view.model().rowCount() == 2

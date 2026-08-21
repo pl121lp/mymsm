@@ -177,6 +177,22 @@ def list_category_transactions(
     return conn.execute(query, [category_id]).fetchall()
 
 
+def list_category_spending(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    """Every categorized transaction across all accounts, for the spending-by-category report.
+
+    Uncategorized transactions (including investment buy/sell activity, which
+    has no category_id) are excluded.
+    """
+    query = """
+        SELECT c.category_id, c.name, t.txn_date, t.amount, a.currency
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        JOIN categories c ON c.category_id = t.category_id
+        ORDER BY t.txn_date
+    """
+    return conn.execute(query).fetchall()
+
+
 def list_payees(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(
         "SELECT payee_id, name FROM payees ORDER BY name"

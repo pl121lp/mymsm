@@ -5,6 +5,7 @@ from data import (
     count_transactions_by_payee,
     list_accounts,
     list_categories,
+    list_category_spending,
     list_category_transactions,
     list_payee_transactions,
     list_securities,
@@ -99,6 +100,24 @@ def test_list_category_transactions_returns_rows_across_accounts_sorted_by_date_
 
 def test_list_category_transactions_unknown_category_returns_empty(dict_conn):
     assert list_category_transactions(dict_conn, category_id=999) == []
+
+
+def test_list_category_spending_returns_categorized_transactions_across_accounts(dict_conn):
+    assert list_category_spending(dict_conn) == [
+        (10, "Utilities", date(2024, 3, 1), Decimal("-75.00"), "USD"),
+        (20, "Groceries", date(2024, 3, 10), Decimal("-20.00"), "USD"),
+        (20, "Groceries", date(2024, 3, 15), Decimal("-52.30"), "USD"),
+    ]
+
+
+def test_list_category_spending_excludes_uncategorized_transactions(dict_conn):
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(2000, 1, NULL, NULL, '2024-03-20', -10.00, 'misc', NULL, NULL, NULL, NULL)"
+    )
+    names = [row[1] for row in list_category_spending(dict_conn)]
+    assert "misc" not in names
+    assert len(list_category_spending(dict_conn)) == 3
 
 
 def test_list_securities_returns_all_ordered_by_name(dict_conn):
