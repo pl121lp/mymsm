@@ -4,7 +4,35 @@ from decimal import Decimal
 import pytest
 
 import data
-from writes import add_transaction, update_transaction
+from writes import add_account, add_transaction, set_account_closed, update_transaction
+
+
+def test_add_account_inserts_row_with_max_id_plus_one(conn):
+    # conn fixture seeds account_ids up to 3 (see conftest.py).
+    account_id = add_account(
+        conn, name="New Savings", account_type="0", currency="USD",
+        opening_balance=Decimal("250.00"),
+    )
+    assert account_id == 4
+    row = conn.execute(
+        "SELECT account_id, name, account_type, is_closed, opening_balance, currency "
+        "FROM accounts WHERE account_id = ?",
+        [account_id],
+    ).fetchone()
+    assert row == (4, "New Savings", "0", False, Decimal("250.00"), "USD")
+
+
+def test_set_account_closed_closes_open_account(conn):
+    set_account_closed(conn, account_id=1, is_closed=True)
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (True,)
+
+
+def test_set_account_closed_reopens_closed_account(conn):
+    # account_id 2 ("Old Card") is seeded as closed (see conftest.py).
+    set_account_closed(conn, account_id=2, is_closed=False)
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
+    assert row == (False,)
 
 
 def test_add_transaction_inserts_plain_cash_row(conn):

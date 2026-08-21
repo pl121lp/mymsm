@@ -25,6 +25,23 @@ def _find_or_create(conn, table, id_column, name):
     return new_id
 
 
+def add_account(conn, name, account_type, currency, opening_balance):
+    """Inserts a new account row (open by default). Returns the new account_id."""
+    account_id = _next_id(conn, "accounts", "account_id")
+    conn.execute(
+        "INSERT INTO accounts VALUES (?, ?, ?, FALSE, ?, ?)",
+        [account_id, name, account_type, opening_balance, currency],
+    )
+    return account_id
+
+
+def set_account_closed(conn, account_id, is_closed):
+    """Sets an account's closed status. Used for both closing and reopening."""
+    conn.execute(
+        "UPDATE accounts SET is_closed = ? WHERE account_id = ?", [is_closed, account_id]
+    )
+
+
 def add_transaction(
     conn,
     account_id,

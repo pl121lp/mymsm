@@ -96,6 +96,115 @@ def test_add_record_button_reloads_dictionaries_pane(qapp, conn, monkeypatch):
     assert "Brand New Payee" in payee_names
 
 
+def test_new_account_button_exists(qapp, conn):
+    window = MainWindow(conn)
+    assert isinstance(window.new_account_button, QPushButton)
+    assert window.new_account_button.text() == "New Account"
+
+
+def test_new_account_button_reloads_accounts_on_accept(qapp, conn, monkeypatch):
+    import add_account_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(add_account_dialog.AddAccountDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    reload_calls.clear()  # drop the reload that happened during __init__
+
+    window._on_new_account_button_clicked()
+
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Account added."
+
+
+def test_new_account_button_does_nothing_on_cancel(qapp, conn, monkeypatch):
+    import add_account_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(add_account_dialog.AddAccountDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    reload_calls.clear()
+
+    window._on_new_account_button_clicked()
+
+    assert reload_calls == []
+
+
+def test_open_account_row_has_close_button(qapp, conn):
+    window = MainWindow(conn)
+    actions_col = window.account_model.COLUMNS.index("Actions")
+    # row 1 = Checking, an open account (see conn fixture ordering).
+    container = window.account_view.indexWidget(window.account_model.index(1, actions_col))
+    button_texts = [child.text() for child in container.findChildren(QPushButton)]
+    assert "Close" in button_texts
+    assert "Reopen" not in button_texts
+
+
+def test_closed_account_row_has_reopen_button(qapp, conn):
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    actions_col = window.account_model.COLUMNS.index("Actions")
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+    container = window.account_view.indexWidget(window.account_model.index(closed_row, actions_col))
+    button_texts = [child.text() for child in container.findChildren(QPushButton)]
+    assert "Reopen" in button_texts
+    assert "Close" not in button_texts
+
+
+def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+
+    window = MainWindow(conn)
+    reload_calls.clear()
+
+    window._on_toggle_closed_button_clicked(1)  # row 1 = Checking (open, see conn fixture ordering)
+
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (True,)
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Account closed."
+
+
+def test_reopen_button_reopens_account_and_reloads(qapp, conn, monkeypatch):
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+
+    window._on_toggle_closed_button_clicked(closed_row)
+
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
+    assert row == (False,)
+    assert window.statusBar().currentMessage() == "Account reopened."
+
+
 def test_transaction_double_click_opens_edit_dialog_for_clicked_transaction(qapp, conn, monkeypatch):
     import add_record_dialog
 

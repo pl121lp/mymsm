@@ -25,6 +25,8 @@ from PySide6.QtWidgets import (
 )
 
 import data
+import writes
+from add_account_dialog import AddAccountDialog
 from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE
@@ -83,6 +85,9 @@ class MainWindow(QMainWindow):
 
         self.show_closed_checkbox = QCheckBox("Show closed accounts")
         self.show_closed_checkbox.stateChanged.connect(self._reload_accounts)
+
+        self.new_account_button = QPushButton("New Account")
+        self.new_account_button.clicked.connect(self._on_new_account_button_clicked)
 
         self.account_view = QTableView()
         self.account_view.setModel(self.account_model)
@@ -151,6 +156,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.total_label)
         left_layout.addLayout(rate_row)
         left_layout.addWidget(self.show_closed_checkbox)
+        left_layout.addWidget(self.new_account_button)
         left_layout.addWidget(self.account_view)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -237,6 +243,12 @@ class MainWindow(QMainWindow):
             add_record_button.clicked.connect(partial(self._on_add_record_button_clicked, row))
             layout.addWidget(add_record_button)
 
+            _, _, _, _, _, is_closed = self.account_model.account_at(row)
+            toggle_closed_button = QPushButton("Reopen" if is_closed else "Close")
+            toggle_closed_button.setStyleSheet(ROW_BUTTON_STYLE)
+            toggle_closed_button.clicked.connect(partial(self._on_toggle_closed_button_clicked, row))
+            layout.addWidget(toggle_closed_button)
+
             self.account_view.setIndexWidget(self.account_model.index(row, actions_col), container)
             column_width = max(column_width, container.sizeHint().width())
         if column_width:
@@ -301,6 +313,21 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(row)
         self._on_account_selected()
         self.statusBar().showMessage("Record added.")
+
+    def _on_new_account_button_clicked(self):
+        dialog = AddAccountDialog(self._conn, parent=self)
+        if dialog.exec() != AddAccountDialog.Accepted:
+            return
+        self._reload_accounts()
+        self.statusBar().showMessage("Account added.")
+
+    def _on_toggle_closed_button_clicked(self, row):
+        account_id, _name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
+            row
+        )
+        writes.set_account_closed(self._conn, account_id, not is_closed)
+        self._reload_accounts()
+        self.statusBar().showMessage("Account reopened." if is_closed else "Account closed.")
 
     def _on_transaction_double_clicked(self, index):
         self._edit_transaction(index.row())
