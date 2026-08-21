@@ -1,5 +1,8 @@
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "etl"))
@@ -8,6 +11,16 @@ import duckdb
 import pytest
 
 from schema import apply_schema
+
+
+@pytest.fixture(scope="session")
+def qapp():
+    from PySide6.QtWidgets import QApplication
+
+    app = QApplication.instance()
+    if app is None:
+        app = QApplication([])
+    return app
 
 
 @pytest.fixture

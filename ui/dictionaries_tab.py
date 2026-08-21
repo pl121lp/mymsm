@@ -25,6 +25,7 @@ from models import (
 )
 from payee_merge import find_merge_groups
 from payee_merge_dialog import PayeeMergeDialog
+from table_copy import enable_cell_copy
 
 
 class CategoriesPane(QWidget):
@@ -40,10 +41,12 @@ class CategoriesPane(QWidget):
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
+        enable_cell_copy(self.list_view)
 
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
         self.detail_view.horizontalHeader().setStretchLastSection(True)
+        enable_cell_copy(self.detail_view)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.list_view)
@@ -97,10 +100,12 @@ class PayeesPane(QWidget):
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
+        enable_cell_copy(self.list_view)
 
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
         self.detail_view.horizontalHeader().setStretchLastSection(True)
+        enable_cell_copy(self.detail_view)
 
         list_pane = QWidget()
         list_layout = QVBoxLayout(list_pane)
@@ -201,6 +206,7 @@ class InvestmentsPane(QWidget):
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
+        enable_cell_copy(self.list_view)
 
         self.price_chart_view = QChartView()
         self.price_chart_view.setRenderHint(QPainter.Antialiasing)

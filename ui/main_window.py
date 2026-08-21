@@ -35,6 +35,7 @@ from models import (
     compute_account_value_history,
     format_currency,
 )
+from table_copy import enable_cell_copy, enable_label_copy
 
 SETTINGS_ORG = "mymsm"
 SETTINGS_APP = "MoneyBrowser"
@@ -60,6 +61,7 @@ class MainWindow(QMainWindow):
         self.transaction_model = TransactionTableModel()
 
         self.total_label = QLabel()
+        enable_label_copy(self.total_label)
 
         self.sek_rate_spinbox = QDoubleSpinBox()
         self.sek_rate_spinbox.setRange(0.0001, 1000.0)
@@ -86,13 +88,16 @@ class MainWindow(QMainWindow):
         self.account_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.account_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.account_view.selectionModel().selectionChanged.connect(self._on_account_selected)
+        enable_cell_copy(self.account_view)
 
         self.account_details_label = QLabel()
+        enable_label_copy(self.account_details_label)
 
         self.transaction_view = QTableView()
         self.transaction_view.setModel(self.transaction_model)
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
         self.transaction_view.setSortingEnabled(True)
+        enable_cell_copy(self.transaction_view)
 
         transactions_page = QWidget()
         transactions_layout = QVBoxLayout(transactions_page)
@@ -105,6 +110,15 @@ class MainWindow(QMainWindow):
         self.details_opening_balance_value = QLabel()
         self.details_balance_value = QLabel()
         self.details_status_value = QLabel()
+        for value_label in (
+            self.details_name_value,
+            self.details_type_value,
+            self.details_currency_value,
+            self.details_opening_balance_value,
+            self.details_balance_value,
+            self.details_status_value,
+        ):
+            enable_label_copy(value_label)
 
         details_page = QWidget()
         details_form = QFormLayout(details_page)
