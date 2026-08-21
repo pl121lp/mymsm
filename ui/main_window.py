@@ -10,6 +10,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
     QDoubleSpinBox,
+    QFileDialog,
     QFormLayout,
     QHBoxLayout,
     QHeaderView,
@@ -32,6 +33,7 @@ from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
+from import_qfx_dialog import ImportQfxDialog
 from models import (
     AccountTableModel,
     TransactionTableModel,
@@ -39,6 +41,7 @@ from models import (
     compute_account_value_history,
     format_currency,
 )
+from qfx_import import parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
@@ -91,6 +94,13 @@ class MainWindow(QMainWindow):
         self.new_account_button = QPushButton("New Account")
         self.new_account_button.clicked.connect(self._on_new_account_button_clicked)
 
+        self.import_button = QPushButton("Import")
+        self.import_button.clicked.connect(self._on_import_button_clicked)
+
+        new_account_row = QHBoxLayout()
+        new_account_row.addWidget(self.new_account_button)
+        new_account_row.addWidget(self.import_button)
+
         self.account_view = QTableView()
         self.account_view.setModel(self.account_model)
         self.account_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
@@ -107,7 +117,11 @@ class MainWindow(QMainWindow):
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
         self.transaction_view.setSortingEnabled(True)
         self.transaction_view.doubleClicked.connect(self._on_transaction_double_clicked)
-        enable_cell_copy(self.transaction_view, on_edit=self._edit_transaction)
+        enable_cell_copy(
+            self.transaction_view,
+            on_edit=self._edit_transaction,
+            extra_actions=self._transaction_context_actions,
+        )
 
         transactions_page = QWidget()
         transactions_layout = QVBoxLayout(transactions_page)
@@ -158,7 +172,7 @@ class MainWindow(QMainWindow):
         left_layout.addWidget(self.total_label)
         left_layout.addLayout(rate_row)
         left_layout.addWidget(self.show_closed_checkbox)
-        left_layout.addWidget(self.new_account_button)
+        left_layout.addLayout(new_account_row)
         left_layout.addWidget(self.account_view)
 
         splitter = QSplitter(Qt.Horizontal)
@@ -333,6 +347,33 @@ class MainWindow(QMainWindow):
         self._reload_accounts()
         self.statusBar().showMessage("Account added.")
 
+    def _on_import_button_clicked(self):
+        file_path, _filter = QFileDialog.getOpenFileName(
+            self, "Import QFX File", "", "QFX Files (*.qfx);;All Files (*)"
+        )
+        if not file_path:
+            return
+        try:
+            records = parse_qfx(file_path)
+        except OSError as exc:
+            self.statusBar().showMessage(f"Failed to read QFX file: {exc}")
+            return
+        if not records:
+            self.statusBar().showMessage("No transactions found in QFX file.")
+            return
+
+        selected_rows = self.account_view.selectionModel().selectedRows()
+        default_account_id = (
+            self.account_model.account_at(selected_rows[0].row())[0] if selected_rows else None
+        )
+        dialog = ImportQfxDialog(
+            self._conn, records, default_account_id=default_account_id, parent=self
+        )
+        if dialog.exec() != ImportQfxDialog.Accepted:
+            return
+        self._refresh_after_write()
+        self.statusBar().showMessage(f"Imported {dialog.imported_count} transaction(s).")
+
     def _on_toggle_closed_button_clicked(self, row):
         account_id, name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
             row
@@ -397,6 +438,30 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(account_row)
         self._on_account_selected()
         self.statusBar().showMessage("Record updated.")
+
+    def _transaction_context_actions(self, row):
+        return [("Delete Record", partial(self._on_delete_record_clicked, row))]
+
+    def _on_delete_record_clicked(self, row):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        account_row = indexes[0].row()
+        transaction_id = self.transaction_model.transaction_at(row)[0]
+        reply = QMessageBox.question(
+            self,
+            "Delete Record",
+            "Permanently delete this record? This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        writes.delete_transaction(self._conn, transaction_id)
+        self._refresh_after_write()
+        self.account_view.selectRow(account_row)
+        self._on_account_selected()
+        self.statusBar().showMessage("Record deleted.")
 
     def _on_account_selected(self, selected=None, deselected=None):
         self.right_stack.setCurrentIndex(TRANSACTIONS_PAGE)

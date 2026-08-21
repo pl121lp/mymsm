@@ -4,7 +4,16 @@ from decimal import Decimal
 import pytest
 
 import data
-from writes import add_account, add_transaction, delete_account, set_account_closed, update_transaction
+from qfx_import import QfxRecord
+from writes import (
+    add_account,
+    add_transaction,
+    delete_account,
+    delete_transaction,
+    import_transactions,
+    set_account_closed,
+    update_transaction,
+)
 
 
 def test_add_account_inserts_row_with_max_id_plus_one(conn):
@@ -33,6 +42,23 @@ def test_set_account_closed_reopens_closed_account(conn):
     set_account_closed(conn, account_id=2, is_closed=False)
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
     assert row == (False,)
+
+
+def test_delete_transaction_removes_the_transaction_row(conn):
+    # transaction_id 1000 belongs to account 1 (see conftest.py).
+    delete_transaction(conn, transaction_id=1000)
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    assert row is None
+
+
+def test_delete_transaction_leaves_other_transactions_intact(conn):
+    delete_transaction(conn, transaction_id=1000)
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = 1001"
+    ).fetchone()
+    assert row == (1001,)
 
 
 def test_delete_account_removes_the_account_row(conn):
@@ -196,3 +222,81 @@ def test_update_transaction_rolls_back_dictionary_inserts_on_failure(conn):
             payee_name="Orphan Payee",
         )
     assert data.list_payees(conn) == before_payees
+
+
+def _qfx_record(name="New Payee", memo="a memo", amount="-10.00", txn_date=date(2024, 4, 1)):
+    return QfxRecord(
+        trn_type="DEBIT", txn_date=txn_date, amount=Decimal(amount),
+        fitid="1", name=name, memo=memo, checknum="",
+    )
+
+
+def test_import_transactions_inserts_one_row_per_record(conn):
+    records = [
+        _qfx_record(name="Store A", amount="-5.00", txn_date=date(2024, 4, 1)),
+        _qfx_record(name="New Cafe", amount="-9.00", txn_date=date(2024, 4, 2)),
+    ]
+
+    count = import_transactions(conn, account_id=1, records=records)
+
+    assert count == 2
+    rows = conn.execute(
+        "SELECT t.txn_date, t.amount, t.memo, p.name FROM transactions t "
+        "JOIN payees p ON p.payee_id = t.payee_id "
+        "WHERE t.account_id = 1 AND t.txn_date IN ('2024-04-01', '2024-04-02') "
+        "ORDER BY t.txn_date"
+    ).fetchall()
+    assert rows == [
+        (date(2024, 4, 1), Decimal("-5.00"), "a memo", "Store A"),
+        (date(2024, 4, 2), Decimal("-9.00"), "a memo", "New Cafe"),
+    ]
+
+
+def test_import_transactions_reuses_existing_payee_case_insensitive(conn):
+    before = len(data.list_payees(conn))
+    import_transactions(conn, account_id=1, records=[_qfx_record(name="store a")])
+    assert len(data.list_payees(conn)) == before
+    row = conn.execute(
+        "SELECT payee_id FROM transactions ORDER BY transaction_id DESC LIMIT 1"
+    ).fetchone()
+    assert row[0] == 100
+
+
+def test_import_transactions_creates_new_payee_for_unknown_name(conn):
+    import_transactions(conn, account_id=1, records=[_qfx_record(name="Brand New Payee")])
+    assert "Brand New Payee" in [name for _id, name in data.list_payees(conn)]
+
+
+def test_import_transactions_treats_blank_name_as_no_payee(conn):
+    import_transactions(conn, account_id=1, records=[_qfx_record(name="")])
+    row = conn.execute(
+        "SELECT payee_id FROM transactions ORDER BY transaction_id DESC LIMIT 1"
+    ).fetchone()
+    assert row[0] is None
+
+
+def test_import_transactions_uses_sequential_ids_after_max(conn):
+    # conn fixture seeds transaction_ids up to 3003 (see conftest.py).
+    records = [_qfx_record(), _qfx_record(txn_date=date(2024, 4, 2))]
+    import_transactions(conn, account_id=1, records=records)
+    ids = conn.execute(
+        "SELECT transaction_id FROM transactions ORDER BY transaction_id DESC LIMIT 2"
+    ).fetchall()
+    assert sorted(row[0] for row in ids) == [3004, 3005]
+
+
+def test_import_transactions_rolls_back_all_rows_on_failure(conn):
+    before_count = len(data.list_transactions(conn, account_id=1))
+    before_payees = data.list_payees(conn)
+    records = [
+        _qfx_record(name="Should Not Persist"),
+        _qfx_record(txn_date=None),  # NOT NULL violation on the second row
+    ]
+    with pytest.raises(Exception):
+        import_transactions(conn, account_id=1, records=records)
+    assert len(data.list_transactions(conn, account_id=1)) == before_count
+    assert data.list_payees(conn) == before_payees
+
+
+def test_import_transactions_returns_zero_for_empty_list(conn):
+    assert import_transactions(conn, account_id=1, records=[]) == 0

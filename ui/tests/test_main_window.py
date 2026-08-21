@@ -1,3 +1,6 @@
+from datetime import date
+from decimal import Decimal
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
@@ -143,6 +146,147 @@ def test_new_account_button_does_nothing_on_cancel(qapp, conn, monkeypatch):
     window._on_new_account_button_clicked()
 
     assert reload_calls == []
+
+
+def test_import_button_exists(qapp, conn):
+    window = MainWindow(conn)
+    assert isinstance(window.import_button, QPushButton)
+    assert window.import_button.text() == "Import"
+
+
+def test_import_button_does_nothing_when_no_file_selected(qapp, conn, monkeypatch):
+    import main_window
+
+    parse_calls = []
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: parse_calls.append(path))
+
+    window = MainWindow(conn)
+    window._on_import_button_clicked()
+
+    assert parse_calls == []
+
+
+def test_import_button_shows_status_when_qfx_file_has_no_records(qapp, conn, monkeypatch):
+    import main_window
+
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [])
+
+    window = MainWindow(conn)
+    window._on_import_button_clicked()
+
+    assert window.statusBar().currentMessage() == "No transactions found in QFX file."
+
+
+def test_import_button_opens_dialog_and_refreshes_accounts_on_accept(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 4, 1), amount=Decimal("-9.00"),
+        fitid="1", name="Brand New Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+
+    def fake_exec(self):
+        self.imported_count = 1
+        return QDialog.Accepted
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    reload_calls.clear()  # drop the reload that happened during __init__
+
+    window._on_import_button_clicked()
+
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Imported 1 transaction(s)."
+
+
+def test_import_button_does_nothing_on_discard(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 4, 1), amount=Decimal("-9.00"),
+        fitid="1", name="Brand New Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    reload_calls.clear()
+
+    window._on_import_button_clicked()
+
+    assert reload_calls == []
+
+
+def test_import_button_defaults_to_selected_account(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 4, 1), amount=Decimal("-9.00"),
+        fitid="1", name="Brand New Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+
+    captured = {}
+    original_init = import_qfx_dialog.ImportQfxDialog.__init__
+
+    def spy_init(self, conn, records, default_account_id=None, parent=None):
+        captured["default_account_id"] = default_account_id
+        original_init(self, conn, records, default_account_id=default_account_id, parent=parent)
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "__init__", spy_init)
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    checking_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[0] == 1
+    )
+    window.account_view.selectRow(checking_row)
+
+    window._on_import_button_clicked()
+
+    assert captured["default_account_id"] == 1
 
 
 def test_open_account_row_has_close_button(qapp, conn):
@@ -357,6 +501,46 @@ def test_transaction_edit_reloads_and_shows_status_on_accept(qapp, conn, monkeyp
 
     assert reload_calls == [True]
     assert window.statusBar().currentMessage() == "Record updated."
+
+
+def test_transaction_context_actions_include_delete_record(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+
+    labels = [label for label, _callback in window._transaction_context_actions(0)]
+
+    assert labels == ["Delete Record"]
+
+
+def test_delete_record_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.No)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    transaction_id = window.transaction_model.transaction_at(0)[0]
+
+    window._on_delete_record_clicked(0)
+
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = ?", [transaction_id]
+    ).fetchone()
+    assert row is not None
+
+
+def test_delete_record_removes_record_and_reloads_on_confirm(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    transaction_id = window.transaction_model.transaction_at(0)[0]
+
+    window._on_delete_record_clicked(0)
+
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = ?", [transaction_id]
+    ).fetchone()
+    assert row is None
+    assert window.statusBar().currentMessage() == "Record deleted."
 
 
 def test_search_tab_is_present_and_holds_the_search_pane(qapp, conn):

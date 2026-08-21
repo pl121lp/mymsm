@@ -55,6 +55,11 @@ def delete_account(conn, account_id):
     conn.execute("DELETE FROM accounts WHERE account_id = ?", [account_id])
 
 
+def delete_transaction(conn, transaction_id):
+    """Permanently deletes a single transaction row."""
+    conn.execute("DELETE FROM transactions WHERE transaction_id = ?", [transaction_id])
+
+
 def add_transaction(
     conn,
     account_id,
@@ -98,6 +103,34 @@ def add_transaction(
         raise
     conn.commit()
     return transaction_id
+
+
+def import_transactions(conn, account_id, records):
+    """Bulk-inserts parsed QFX records into account_id as plain cash rows
+    (payee = record.name, memo = record.memo), auto-creating any payee that
+    doesn't already exist by name (case-insensitive). The whole batch commits
+    as one transaction, so a bad row can't leave the account half-imported.
+    Returns the number of rows inserted."""
+    if not records:
+        return 0
+    conn.begin()
+    try:
+        transaction_id = _next_id(conn, "transactions", "transaction_id")
+        for record in records:
+            payee_id = _find_or_create(conn, "payees", "payee_id", record.name) if record.name else None
+            conn.execute(
+                "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                [
+                    transaction_id, account_id, None, payee_id, record.txn_date, record.amount,
+                    record.memo or None, None, None, None, None,
+                ],
+            )
+            transaction_id += 1
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return len(records)
 
 
 def update_transaction(
