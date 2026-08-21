@@ -292,6 +292,62 @@ class CategoryTransactionTableModel(QAbstractTableModel):
         return values[index.column()]
 
 
+class SearchResultTableModel(QAbstractTableModel):
+    COLUMNS = ["Date", "Account", "Payee", "Category", "Investment", "Memo", "Amount"]
+
+    def __init__(self, results=None, parent=None):
+        super().__init__(parent)
+        self._results = results or []
+
+    def set_results(self, results):
+        self.beginResetModel()
+        self._results = results
+        self.endResetModel()
+
+    def account_info_at(self, row):
+        _, _, account_id, _, account_type, *_ = self._results[row]
+        return account_id, account_type
+
+    def transaction_at(self, row):
+        (
+            transaction_id, txn_date, _account_id, _account_name, _account_type,
+            payee, category, memo, amount, security, activity, quantity, price,
+        ) = self._results[row]
+        return (
+            transaction_id, txn_date, payee, category, memo, amount,
+            security, activity, quantity, price,
+        )
+
+    def rowCount(self, parent=None):
+        return len(self._results)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        (
+            _transaction_id, txn_date, _account_id, account_name, _account_type,
+            payee, category, memo, amount, security, _activity, _quantity, _price,
+        ) = self._results[index.row()]
+        values = [
+            txn_date.isoformat(),
+            account_name,
+            payee or "",
+            category or "",
+            security or "",
+            memo or "",
+            f"{amount:.2f}",
+        ]
+        return values[index.column()]
+
+
 class PayeeTransactionTableModel(QAbstractTableModel):
     COLUMNS = ["Date", "Account", "Category", "Memo", "Amount"]
 

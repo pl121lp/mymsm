@@ -36,6 +36,7 @@ from models import (
     compute_account_value_history,
     format_currency,
 )
+from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
 
 SETTINGS_ORG = "mymsm"
@@ -167,9 +168,15 @@ class MainWindow(QMainWindow):
         dictionaries_tabs.addTab(self.payees_pane, "Payees")
         dictionaries_tabs.addTab(self.investments_pane, "Investments")
 
+        self.search_pane = SearchPane(
+            self._conn, self.statusBar().showMessage,
+            on_transaction_changed=self._refresh_after_write,
+        )
+
         tabs = QTabWidget()
         tabs.addTab(splitter, "Accounts")
         tabs.addTab(dictionaries_tabs, "Dictionaries")
+        tabs.addTab(self.search_pane, "Search")
         self.setCentralWidget(tabs)
 
         self._reload_accounts()
@@ -277,6 +284,12 @@ class MainWindow(QMainWindow):
         self.value_chart_view.setChart(chart)
         self.right_stack.setCurrentIndex(VALUE_PAGE)
 
+    def _refresh_after_write(self):
+        self._reload_accounts()
+        self.categories_pane._reload()
+        self.payees_pane._reload()
+        self.investments_pane._reload()
+
     def _on_add_record_button_clicked(self, row):
         account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
             row
@@ -284,10 +297,7 @@ class MainWindow(QMainWindow):
         dialog = AddRecordDialog(self._conn, account_id, account_type, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
             return
-        self._reload_accounts()
-        self.categories_pane._reload()
-        self.payees_pane._reload()
-        self.investments_pane._reload()
+        self._refresh_after_write()
         self.account_view.selectRow(row)
         self._on_account_selected()
         self.statusBar().showMessage("Record added.")
@@ -307,10 +317,7 @@ class MainWindow(QMainWindow):
         dialog = AddRecordDialog(self._conn, account_id, account_type, transaction=transaction, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
             return
-        self._reload_accounts()
-        self.categories_pane._reload()
-        self.payees_pane._reload()
-        self.investments_pane._reload()
+        self._refresh_after_write()
         self.account_view.selectRow(account_row)
         self._on_account_selected()
         self.statusBar().showMessage("Record updated.")

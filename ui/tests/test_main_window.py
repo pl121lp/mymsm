@@ -141,6 +141,44 @@ def test_transaction_edit_reloads_and_shows_status_on_accept(qapp, conn, monkeyp
     assert window.statusBar().currentMessage() == "Record updated."
 
 
+def test_search_tab_is_present_and_holds_the_search_pane(qapp, conn):
+    from search_tab import SearchPane
+
+    window = MainWindow(conn)
+    tabs = window.centralWidget()
+    search_index = next(i for i in range(tabs.count()) if tabs.tabText(i) == "Search")
+    assert tabs.widget(search_index) is window.search_pane
+    assert isinstance(window.search_pane, SearchPane)
+
+
+def test_search_pane_edit_reloads_accounts_and_dictionaries_panes(qapp, conn, monkeypatch):
+    import add_record_dialog
+    import writes
+    from datetime import date
+    from decimal import Decimal
+
+    def fake_exec(self):
+        writes.add_transaction(
+            self._conn, self._account_id, date(2024, 4, 1), Decimal("-5.00"),
+            payee_name="Brand New Payee",
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.search_pane.payee_edit.setText("Store A")
+    window.search_pane.search_button.click()
+
+    window.search_pane._on_result_double_clicked(window.search_pane.result_model.index(0, 0))
+
+    payee_names = [
+        window.payees_pane.list_model.data(window.payees_pane.list_model.index(r))
+        for r in range(window.payees_pane.list_model.rowCount())
+    ]
+    assert "Brand New Payee" in payee_names
+
+
 def test_transaction_edit_does_nothing_on_cancel(qapp, conn, monkeypatch):
     import add_record_dialog
 

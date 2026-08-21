@@ -7,6 +7,7 @@ from models import (
     AccountTableModel,
     CategoryTransactionTableModel,
     DictionaryListModel,
+    SearchResultTableModel,
     TransactionTableModel,
     activity_label,
     compute_account_value_history,
@@ -323,6 +324,60 @@ def test_compute_account_value_history_investment_account_ignores_non_trade_acti
     ]
     history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
     assert history == [(date(2024, 1, 10), Decimal("147.12"))]
+
+
+SEARCH_ROW = (
+    1000, date(2024, 3, 15), 1, "Checking", "Bank",
+    "Store A", "Groceries", "weekly shop", Decimal("-52.30"),
+    None, None, None, None,
+)
+
+SEARCH_INVESTMENT_ROW = (
+    3000, date(2024, 1, 10), 3, "Brokerage A", "5",
+    None, None, None, Decimal("147.12"),
+    "Vanguard Total Stock Market Index", "1", Decimal("8.0"), Decimal("18.39"),
+)
+
+
+def test_search_result_model_columns_are_date_account_payee_category_investment_memo_amount():
+    model = SearchResultTableModel([SEARCH_ROW])
+    assert [
+        model.headerData(i, Qt.Horizontal) for i in range(model.columnCount())
+    ] == ["Date", "Account", "Payee", "Category", "Investment", "Memo", "Amount"]
+
+
+def test_search_result_model_displays_row_fields():
+    model = SearchResultTableModel([SEARCH_ROW])
+    assert _data(model, 0, 0) == "2024-03-15"
+    assert _data(model, 0, 1) == "Checking"
+    assert _data(model, 0, 2) == "Store A"
+    assert _data(model, 0, 3) == "Groceries"
+    assert _data(model, 0, 4) == ""
+    assert _data(model, 0, 5) == "weekly shop"
+    assert _data(model, 0, 6) == "-52.30"
+
+
+def test_search_result_model_displays_investment_name():
+    model = SearchResultTableModel([SEARCH_INVESTMENT_ROW])
+    assert _data(model, 0, 4) == "Vanguard Total Stock Market Index"
+
+
+def test_search_result_model_row_count():
+    model = SearchResultTableModel([SEARCH_ROW, SEARCH_INVESTMENT_ROW])
+    assert model.rowCount() == 2
+
+
+def test_search_result_model_account_info_at_returns_id_and_type():
+    model = SearchResultTableModel([SEARCH_ROW])
+    assert model.account_info_at(0) == (1, "Bank")
+
+
+def test_search_result_model_transaction_at_returns_add_record_dialog_shape():
+    model = SearchResultTableModel([SEARCH_ROW])
+    assert model.transaction_at(0) == (
+        1000, date(2024, 3, 15), "Store A", "Groceries", "weekly shop",
+        Decimal("-52.30"), None, None, None, None,
+    )
 
 
 def test_category_transaction_model_row_and_column_count():

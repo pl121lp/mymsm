@@ -10,6 +10,7 @@ from data import (
     list_securities,
     list_security_history,
     list_transactions,
+    search_transactions,
 )
 
 
@@ -128,3 +129,88 @@ def test_list_payee_transactions_accepts_multiple_ids(dict_conn):
 
 def test_list_payee_transactions_empty_ids_returns_empty(dict_conn):
     assert list_payee_transactions(dict_conn, []) == []
+
+
+def test_search_transactions_no_filters_returns_all_sorted_by_date_desc(dict_conn):
+    transaction_ids = [row[0] for row in search_transactions(dict_conn)]
+    assert transaction_ids == [1000, 1001, 3002, 1002, 4001, 3001, 4000, 3000]
+
+
+def test_search_transactions_returns_full_row_shape_for_editing(dict_conn):
+    rows = search_transactions(dict_conn, payee="Store A")
+    assert rows == [
+        (
+            1000, date(2024, 3, 15), 1, "Checking", "Bank",
+            "Store A", "Groceries", "weekly shop", Decimal("-52.30"),
+            None, None, None, None,
+        ),
+    ]
+
+
+def test_search_transactions_filters_by_payee_substring_case_insensitive(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, payee="store b")}
+    assert transaction_ids == {1001}
+
+
+def test_search_transactions_filters_by_category_substring(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, category="util")}
+    assert transaction_ids == {1002}
+
+
+def test_search_transactions_filters_by_investment_substring(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, investment="apple")}
+    assert transaction_ids == set()
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, investment="vanguard")}
+    assert transaction_ids == {3000, 3001, 3002, 4000, 4001}
+
+
+def test_search_transactions_filters_by_memo_substring(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, memo="bill")}
+    assert transaction_ids == {1002}
+
+
+def test_search_transactions_filters_by_amount_range(dict_conn):
+    transaction_ids = {
+        row[0] for row in search_transactions(dict_conn, amount_min=Decimal("0"), amount_max=Decimal("100"))
+    }
+    assert transaction_ids == {3001}
+
+
+def test_search_transactions_filters_by_amount_min_only(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, amount_min=Decimal("100"))}
+    assert transaction_ids == {3000, 4000}
+
+
+def test_search_transactions_filters_by_amount_max_only(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, amount_max=Decimal("-50"))}
+    assert transaction_ids == {1000, 1002, 4001}
+
+
+def test_search_transactions_filters_by_date_min(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, date_min=date(2024, 3, 1))}
+    assert transaction_ids == {1000, 1001, 1002, 3002}
+
+
+def test_search_transactions_filters_by_date_max(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, date_max=date(2024, 1, 15))}
+    assert transaction_ids == {3000, 4000}
+
+
+def test_search_transactions_filters_by_date_range(dict_conn):
+    transaction_ids = {
+        row[0]
+        for row in search_transactions(dict_conn, date_min=date(2024, 2, 1), date_max=date(2024, 2, 28))
+    }
+    assert transaction_ids == {3001, 4001}
+
+
+def test_search_transactions_filters_by_account_ids(dict_conn):
+    transaction_ids = {row[0] for row in search_transactions(dict_conn, account_ids=[3])}
+    assert transaction_ids == {3000, 3001, 3002}
+
+
+def test_search_transactions_combines_filters_with_and(dict_conn):
+    transaction_ids = {
+        row[0] for row in search_transactions(dict_conn, category="Groceries", amount_max=Decimal("-30"))
+    }
+    assert transaction_ids == {1000}

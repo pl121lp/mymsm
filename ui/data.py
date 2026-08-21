@@ -94,6 +94,67 @@ def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[
     return conn.execute(query, [account_id]).fetchall()
 
 
+def search_transactions(
+    conn: duckdb.DuckDBPyConnection,
+    payee: str | None = None,
+    category: str | None = None,
+    investment: str | None = None,
+    memo: str | None = None,
+    amount_min=None,
+    amount_max=None,
+    date_min=None,
+    date_max=None,
+    account_ids: list[int] | None = None,
+) -> list[tuple]:
+    """Cross-account transaction search for the Search tab.
+
+    Row shape matches list_transactions()'s payee/category/investment
+    fields plus account_id/account_type, so results can be fed straight
+    into AddRecordDialog for editing.
+    """
+    query = """
+        SELECT t.transaction_id, t.txn_date, a.account_id, a.name, a.account_type,
+               p.name, c.name, t.memo, t.amount, sec.name, t.activity, t.quantity, t.price
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        LEFT JOIN payees p ON t.payee_id = p.payee_id
+        LEFT JOIN categories c ON t.category_id = c.category_id
+        LEFT JOIN securities sec ON t.security_id = sec.security_id
+        WHERE 1 = 1
+    """
+    params = []
+    if payee:
+        query += " AND p.name ILIKE ?"
+        params.append(f"%{payee}%")
+    if category:
+        query += " AND c.name ILIKE ?"
+        params.append(f"%{category}%")
+    if investment:
+        query += " AND sec.name ILIKE ?"
+        params.append(f"%{investment}%")
+    if memo:
+        query += " AND t.memo ILIKE ?"
+        params.append(f"%{memo}%")
+    if amount_min is not None:
+        query += " AND t.amount >= ?"
+        params.append(amount_min)
+    if amount_max is not None:
+        query += " AND t.amount <= ?"
+        params.append(amount_max)
+    if date_min is not None:
+        query += " AND t.txn_date >= ?"
+        params.append(date_min)
+    if date_max is not None:
+        query += " AND t.txn_date <= ?"
+        params.append(date_max)
+    if account_ids:
+        placeholders = ",".join("?" for _ in account_ids)
+        query += f" AND t.account_id IN ({placeholders})"
+        params.extend(account_ids)
+    query += " ORDER BY t.txn_date DESC, t.transaction_id DESC"
+    return conn.execute(query, params).fetchall()
+
+
 def list_categories(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(
         "SELECT category_id, name FROM categories ORDER BY name"
