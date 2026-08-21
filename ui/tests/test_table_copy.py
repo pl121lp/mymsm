@@ -42,6 +42,47 @@ def test_context_menu_has_no_edit_action_when_click_is_outside_any_row(qapp):
     assert [action.text() for action in menu.actions()] == ["Copy"]
 
 
+def test_context_menu_has_no_extra_actions_when_none_returned(qapp):
+    view = _make_view(["a"])
+    pos = view.visualRect(view.model().index(0, 0)).center()
+
+    menu = _build_context_menu(view, pos, extra_actions=lambda row: [])
+
+    assert [action.text() for action in menu.actions()] == ["Copy"]
+
+
+def test_context_menu_includes_extra_actions_for_clicked_row(qapp):
+    view = _make_view(["a", "b", "c"])
+    pos = view.visualRect(view.model().index(1, 0)).center()
+
+    menu = _build_context_menu(view, pos, extra_actions=lambda row: [("Delete Account", lambda: None)])
+
+    assert [action.text() for action in menu.actions()] == ["Copy", "Delete Account"]
+
+
+def test_context_menu_extra_action_callback_is_triggered(qapp):
+    view = _make_view(["a", "b", "c"])
+    calls = []
+    pos = view.visualRect(view.model().index(2, 0)).center()
+
+    menu = _build_context_menu(
+        view, pos, extra_actions=lambda row: [("Delete Account", lambda: calls.append(row))]
+    )
+
+    delete_action = next(a for a in menu.actions() if a.text() == "Delete Account")
+    delete_action.trigger()
+    assert calls == [2]
+
+
+def test_context_menu_has_no_extra_actions_when_click_is_outside_any_row(qapp):
+    view = _make_view(["a"])
+    pos = view.viewport().rect().bottomRight()
+
+    menu = _build_context_menu(view, pos, extra_actions=lambda row: [("Delete Account", lambda: None)])
+
+    assert [action.text() for action in menu.actions()] == ["Copy"]
+
+
 def test_single_cell_returns_its_text():
     assert build_clipboard_text([(0, 0, "52.30")]) == "52.30"
 

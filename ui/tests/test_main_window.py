@@ -1,5 +1,5 @@
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QDialog, QPushButton
+from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
 from main_window import MainWindow
 
@@ -203,6 +203,91 @@ def test_reopen_button_reopens_account_and_reloads(qapp, conn, monkeypatch):
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
     assert row == (False,)
     assert window.statusBar().currentMessage() == "Account reopened."
+
+
+def test_context_actions_empty_for_open_account_row(qapp, conn):
+    window = MainWindow(conn)
+    # row 1 = Checking, an open account (see conn fixture ordering).
+    assert window._account_context_actions(1) == []
+
+
+def test_context_actions_include_delete_for_closed_account_row(qapp, conn):
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+    labels = [label for label, _callback in window._account_context_actions(closed_row)]
+    assert labels == ["Delete Account"]
+
+
+def test_delete_account_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.No)
+
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+
+    window._on_delete_account_clicked(closed_row)
+
+    row = conn.execute("SELECT account_id FROM accounts WHERE account_id = 2").fetchone()
+    assert row is not None
+
+
+def test_delete_account_removes_account_and_reloads_on_confirm(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+    reload_calls.clear()
+
+    window._on_delete_account_clicked(closed_row)
+
+    row = conn.execute("SELECT account_id FROM accounts WHERE account_id = 2").fetchone()
+    assert row is None
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Account 'Old Card' deleted."
+
+
+def test_delete_account_confirmation_mentions_transaction_count(qapp, conn, monkeypatch):
+    # account_id 1 ("Checking") has 2 seeded transactions; close it so the
+    # delete action is available, then confirm the count is in the prompt.
+    conn.execute("UPDATE accounts SET is_closed = TRUE WHERE account_id = 1")
+    seen_messages = []
+
+    def fake_question(*args, **kwargs):
+        seen_messages.append(args[2])
+        return QMessageBox.No
+
+    monkeypatch.setattr(QMessageBox, "question", fake_question)
+
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Checking"
+    )
+
+    window._on_delete_account_clicked(closed_row)
+
+    assert "2" in seen_messages[0]
 
 
 def test_transaction_double_click_opens_edit_dialog_for_clicked_transaction(qapp, conn, monkeypatch):

@@ -4,7 +4,7 @@ from decimal import Decimal
 import pytest
 
 import data
-from writes import add_account, add_transaction, set_account_closed, update_transaction
+from writes import add_account, add_transaction, delete_account, set_account_closed, update_transaction
 
 
 def test_add_account_inserts_row_with_max_id_plus_one(conn):
@@ -33,6 +33,28 @@ def test_set_account_closed_reopens_closed_account(conn):
     set_account_closed(conn, account_id=2, is_closed=False)
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
     assert row == (False,)
+
+
+def test_delete_account_removes_the_account_row(conn):
+    # account_id 2 ("Old Card") has no transactions (see conftest.py).
+    delete_account(conn, account_id=2)
+    row = conn.execute("SELECT account_id FROM accounts WHERE account_id = 2").fetchone()
+    assert row is None
+
+
+def test_delete_account_removes_its_transactions(conn):
+    # account_id 1 ("Checking") has transactions 1000 and 1001 (see conftest.py).
+    delete_account(conn, account_id=1)
+    rows = conn.execute("SELECT transaction_id FROM transactions WHERE account_id = 1").fetchall()
+    assert rows == []
+
+
+def test_delete_account_leaves_other_accounts_transactions_intact(conn):
+    delete_account(conn, account_id=1)
+    row = conn.execute("SELECT transaction_id FROM transactions WHERE transaction_id = 1000").fetchone()
+    assert row is None
+    other_rows = conn.execute("SELECT transaction_id FROM transactions WHERE account_id = 3").fetchall()
+    assert len(other_rows) == 4
 
 
 def test_add_transaction_inserts_plain_cash_row(conn):

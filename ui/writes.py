@@ -42,6 +42,19 @@ def set_account_closed(conn, account_id, is_closed):
     )
 
 
+def delete_account(conn, account_id):
+    """Permanently deletes an account and its transactions (the transactions
+    FK has no cascade, so they must be removed first).
+
+    Not wrapped in an explicit transaction: DuckDB's FK constraint check on
+    the second DELETE does not see the first DELETE's effect within the same
+    uncommitted transaction (a documented DuckDB FK limitation), so each
+    statement is left to auto-commit individually.
+    """
+    conn.execute("DELETE FROM transactions WHERE account_id = ?", [account_id])
+    conn.execute("DELETE FROM accounts WHERE account_id = ?", [account_id])
+
+
 def add_transaction(
     conn,
     account_id,

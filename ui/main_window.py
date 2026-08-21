@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QSplitter,
     QStackedWidget,
@@ -95,7 +96,7 @@ class MainWindow(QMainWindow):
         self.account_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.account_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.account_view.selectionModel().selectionChanged.connect(self._on_account_selected)
-        enable_cell_copy(self.account_view)
+        enable_cell_copy(self.account_view, extra_actions=self._account_context_actions)
 
         self.account_details_label = QLabel()
         enable_label_copy(self.account_details_label)
@@ -328,6 +329,33 @@ class MainWindow(QMainWindow):
         writes.set_account_closed(self._conn, account_id, not is_closed)
         self._reload_accounts()
         self.statusBar().showMessage("Account reopened." if is_closed else "Account closed.")
+
+    def _account_context_actions(self, row):
+        _account_id, _name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
+            row
+        )
+        if not is_closed:
+            return []
+        return [("Delete Account", partial(self._on_delete_account_clicked, row))]
+
+    def _on_delete_account_clicked(self, row):
+        account_id, name, _account_type, _currency, _balance, _is_closed = self.account_model.account_at(
+            row
+        )
+        transaction_count = len(data.list_transactions(self._conn, account_id))
+        reply = QMessageBox.question(
+            self,
+            "Delete Account",
+            f"Permanently delete '{name}' and its {transaction_count} transaction(s)? "
+            "This cannot be undone.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        writes.delete_account(self._conn, account_id)
+        self._refresh_after_write()
+        self.statusBar().showMessage(f"Account '{name}' deleted.")
 
     def _on_transaction_double_clicked(self, index):
         self._edit_transaction(index.row())
