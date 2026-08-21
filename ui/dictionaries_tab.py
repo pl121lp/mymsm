@@ -6,6 +6,7 @@ from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
+    QLabel,
     QListView,
     QMessageBox,
     QPushButton,
@@ -37,20 +38,36 @@ class CategoriesPane(QWidget):
         self.list_model = DictionaryListModel()
         self.detail_model = CategoryTransactionTableModel()
 
+        self.count_label = QLabel()
+
         self.list_view = QListView()
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
         enable_cell_copy(self.list_view)
 
+        self.detail_count_label = QLabel()
+
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
         self.detail_view.horizontalHeader().setStretchLastSection(True)
         enable_cell_copy(self.detail_view)
 
+        list_pane = QWidget()
+        list_layout = QVBoxLayout(list_pane)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.count_label)
+        list_layout.addWidget(self.list_view)
+
+        detail_pane = QWidget()
+        detail_layout = QVBoxLayout(detail_pane)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.addWidget(self.detail_count_label)
+        detail_layout.addWidget(self.detail_view)
+
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.list_view)
-        splitter.addWidget(self.detail_view)
+        splitter.addWidget(list_pane)
+        splitter.addWidget(detail_pane)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
@@ -62,15 +79,21 @@ class CategoriesPane(QWidget):
     def _reload(self):
         try:
             categories = data.list_categories(self._conn)
+            txn_counts = data.count_transactions_by_category(self._conn)
         except Exception as exc:
             self._report_error(f"Failed to load categories: {exc}")
             return
+        categories = [c for c in categories if txn_counts.get(c[0], 0) > 0]
         self.list_model.set_items(categories)
+        self.count_label.setText(f"{len(categories)} categories")
+        self.detail_model.set_transactions([])
+        self.detail_count_label.setText("0 records")
 
     def _on_selected(self, selected=None, deselected=None):
         indexes = self.list_view.selectionModel().selectedIndexes()
         if not indexes:
             self.detail_model.set_transactions([])
+            self.detail_count_label.setText("0 records")
             return
         category_id = self.list_model.id_at(indexes[0].row())
         try:
@@ -79,6 +102,7 @@ class CategoriesPane(QWidget):
             self._report_error(f"Failed to load category transactions: {exc}")
             return
         self.detail_model.set_transactions(transactions)
+        self.detail_count_label.setText(f"{len(transactions)} records")
         self.detail_view.resizeColumnsToContents()
 
 
@@ -96,11 +120,15 @@ class PayeesPane(QWidget):
         self.merge_button = QPushButton("Merge Duplicates…")
         self.merge_button.clicked.connect(self._on_merge_clicked)
 
+        self.count_label = QLabel()
+
         self.list_view = QListView()
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
         enable_cell_copy(self.list_view)
+
+        self.detail_count_label = QLabel()
 
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
@@ -111,11 +139,18 @@ class PayeesPane(QWidget):
         list_layout = QVBoxLayout(list_pane)
         list_layout.setContentsMargins(0, 0, 0, 0)
         list_layout.addWidget(self.merge_button)
+        list_layout.addWidget(self.count_label)
         list_layout.addWidget(self.list_view)
+
+        detail_pane = QWidget()
+        detail_layout = QVBoxLayout(detail_pane)
+        detail_layout.setContentsMargins(0, 0, 0, 0)
+        detail_layout.addWidget(self.detail_count_label)
+        detail_layout.addWidget(self.detail_view)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(list_pane)
-        splitter.addWidget(self.detail_view)
+        splitter.addWidget(detail_pane)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
@@ -132,11 +167,15 @@ class PayeesPane(QWidget):
             return
         merged = payee_aliases.apply_aliases(payees, self._alias_groups, self._alias_names)
         self.list_model.set_items(merged)
+        self.count_label.setText(f"{len(merged)} payees")
+        self.detail_model.set_transactions([])
+        self.detail_count_label.setText("0 records")
 
     def _on_selected(self, selected=None, deselected=None):
         indexes = self.list_view.selectionModel().selectedIndexes()
         if not indexes:
             self.detail_model.set_transactions([])
+            self.detail_count_label.setText("0 records")
             return
         payee_id = self.list_model.id_at(indexes[0].row())
         payee_ids = payee_aliases.resolve_payee_ids(payee_id, self._alias_groups)
@@ -146,6 +185,7 @@ class PayeesPane(QWidget):
             self._report_error(f"Failed to load payee transactions: {exc}")
             return
         self.detail_model.set_transactions(transactions)
+        self.detail_count_label.setText(f"{len(transactions)} records")
         self.detail_view.resizeColumnsToContents()
 
     def _on_merge_clicked(self):
@@ -202,11 +242,18 @@ class InvestmentsPane(QWidget):
         self._report_error = report_error
 
         self.list_model = DictionaryListModel()
+        self.count_label = QLabel()
         self.list_view = QListView()
         self.list_view.setModel(self.list_model)
         self.list_view.setSelectionMode(QAbstractItemView.SingleSelection)
         self.list_view.selectionModel().selectionChanged.connect(self._on_selected)
         enable_cell_copy(self.list_view)
+
+        list_pane = QWidget()
+        list_layout = QVBoxLayout(list_pane)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.addWidget(self.count_label)
+        list_layout.addWidget(self.list_view)
 
         self.price_chart_view = QChartView()
         self.price_chart_view.setRenderHint(QPainter.Antialiasing)
@@ -219,7 +266,7 @@ class InvestmentsPane(QWidget):
         charts_layout.addWidget(self.quantity_chart_view)
 
         splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(self.list_view)
+        splitter.addWidget(list_pane)
         splitter.addWidget(charts_widget)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
@@ -236,6 +283,7 @@ class InvestmentsPane(QWidget):
             self._report_error(f"Failed to load investments: {exc}")
             return
         self.list_model.set_items(securities)
+        self.count_label.setText(f"{len(securities)} investments")
 
     def _on_selected(self, selected=None, deselected=None):
         indexes = self.list_view.selectionModel().selectedIndexes()

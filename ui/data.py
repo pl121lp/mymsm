@@ -224,6 +224,14 @@ def count_transactions_by_payee(conn: duckdb.DuckDBPyConnection) -> dict[int, in
     return dict(rows)
 
 
+def count_transactions_by_category(conn: duckdb.DuckDBPyConnection) -> dict[int, int]:
+    rows = conn.execute(
+        "SELECT category_id, COUNT(*) FROM transactions "
+        "WHERE category_id IS NOT NULL GROUP BY category_id"
+    ).fetchall()
+    return dict(rows)
+
+
 def list_securities(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(
         "SELECT security_id, name FROM securities ORDER BY name"

@@ -476,14 +476,15 @@ class MainWindow(QMainWindow):
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
         balance_label = "Value" if is_investment else "Balance"
         usd_balance = self.account_model.to_usd(currency, balance)
-        self.account_details_label.setText(
-            f"{name} ({account_type_label(account_type)}) — "
-            f"{balance_label}: {format_currency(usd_balance)} USD"
-        )
         try:
             transactions = data.list_transactions(self._conn, account_id)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to load transactions: {exc}")
             return
+        self.account_details_label.setText(
+            f"{name} ({account_type_label(account_type)}) — "
+            f"{balance_label}: {format_currency(usd_balance)} USD — "
+            f"{len(transactions)} record(s)"
+        )
         self.transaction_model.set_transactions(transactions, is_investment=is_investment)
         self.transaction_view.resizeColumnsToContents()
