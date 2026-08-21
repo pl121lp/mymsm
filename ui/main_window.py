@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 import data
+from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
@@ -225,6 +226,11 @@ class MainWindow(QMainWindow):
             value_button.clicked.connect(partial(self._on_value_button_clicked, row))
             layout.addWidget(value_button)
 
+            add_record_button = QPushButton("Add Record")
+            add_record_button.setStyleSheet(ROW_BUTTON_STYLE)
+            add_record_button.clicked.connect(partial(self._on_add_record_button_clicked, row))
+            layout.addWidget(add_record_button)
+
             self.account_view.setIndexWidget(self.account_model.index(row, actions_col), container)
             column_width = max(column_width, container.sizeHint().width())
         if column_width:
@@ -271,6 +277,18 @@ class MainWindow(QMainWindow):
         chart = build_line_chart(f"{name} — Value (USD)", [(name, usd_history)])
         self.value_chart_view.setChart(chart)
         self.right_stack.setCurrentIndex(VALUE_PAGE)
+
+    def _on_add_record_button_clicked(self, row):
+        account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
+            row
+        )
+        dialog = AddRecordDialog(self._conn, account_id, account_type, parent=self)
+        if dialog.exec() != AddRecordDialog.Accepted:
+            return
+        self._reload_accounts()
+        self.account_view.selectRow(row)
+        self._on_account_selected()
+        self.statusBar().showMessage("Record added.")
 
     def _on_account_selected(self, selected=None, deselected=None):
         self.right_stack.setCurrentIndex(TRANSACTIONS_PAGE)
