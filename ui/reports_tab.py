@@ -8,6 +8,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QDateEdit,
+    QDialog,
     QHBoxLayout,
     QLabel,
     QListView,
@@ -20,6 +21,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCharts import QChart, QChartView
 
 import data
+from category_filter_dialog import CategoryFilterDialog
 from charts import build_bar_chart, build_pie_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from models import (
@@ -54,6 +56,7 @@ class ReportsPane(QWidget):
         self._net_worth_accounts = []
         self._category_spending = []
         self._category_totals = []
+        self._selected_categories = None
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -75,11 +78,14 @@ class ReportsPane(QWidget):
         self.view_selector = QComboBox()
         self.view_selector.addItems(["Table", "Pie Chart"])
         self.view_selector.currentIndexChanged.connect(self._on_view_mode_changed)
+        self.custom_categories_button = QPushButton("Custom Categories")
+        self.custom_categories_button.clicked.connect(self._on_custom_categories_clicked)
         self.view_selector_row = QWidget()
         view_selector_row_layout = QHBoxLayout(self.view_selector_row)
         view_selector_row_layout.setContentsMargins(0, 0, 0, 0)
         view_selector_row_layout.addWidget(QLabel("View:"))
         view_selector_row_layout.addWidget(self.view_selector)
+        view_selector_row_layout.addWidget(self.custom_categories_button)
         view_selector_row_layout.addStretch()
         self.view_selector_row.setVisible(False)
 
@@ -220,6 +226,7 @@ class ReportsPane(QWidget):
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
 
     def _load_spending_by_category_report(self):
+        self._selected_categories = None
         try:
             transactions = data.list_category_spending(self._conn)
         except Exception as exc:
@@ -250,6 +257,10 @@ class ReportsPane(QWidget):
         categories = compute_spending_by_category(
             self._category_spending, start, end, self._to_usd
         )
+        if self._selected_categories is not None:
+            categories = [
+                (name, total) for name, total in categories if name in self._selected_categories
+            ]
         self._category_totals = categories
         self.category_table_model.set_categories(categories)
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
@@ -259,3 +270,16 @@ class ReportsPane(QWidget):
     def _render_pie_chart(self):
         chart = build_pie_chart("Spending by Category (USD)", self._category_totals)
         self.chart_view.setChart(chart)
+
+    def _on_custom_categories_clicked(self):
+        all_names = sorted({name for _cid, name, _date, _amt, _cur in self._category_spending})
+        current_selection = (
+            self._selected_categories if self._selected_categories is not None else set(all_names)
+        )
+        dialog = CategoryFilterDialog(all_names, current_selection, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        self._selected_categories = dialog.selected_categories()
+        start = self.start_date_edit.date().toPython()
+        end = self.end_date_edit.date().toPython()
+        self._render_spending_by_category_table(start, end)

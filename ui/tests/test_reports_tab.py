@@ -1,7 +1,9 @@
 from datetime import date
 
 from PySide6.QtCore import QDate, QItemSelectionModel, Qt
+from PySide6.QtWidgets import QDialog
 
+import reports_tab
 from reports_tab import REPORTS, ReportsPane
 
 
@@ -184,3 +186,87 @@ def test_updating_range_recomputes_pie_chart_for_narrower_window(qapp, dict_conn
     series = pane.chart_view.chart().series()[0]
     assert len(series.slices()) == 1
     assert series.slices()[0].label() == "Groceries"
+
+
+class _FakeCategoryFilterDialog:
+    result = QDialog.Accepted
+    last_init_args = None
+
+    def __init__(self, category_names, selected_names, parent=None):
+        _FakeCategoryFilterDialog.last_init_args = (set(category_names), set(selected_names))
+        self._selection = {"Utilities"}
+
+    def exec(self):
+        return self.__class__.result
+
+    def selected_categories(self):
+        return self._selection
+
+
+def test_custom_categories_button_hidden_for_net_worth_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert not pane.custom_categories_button.isVisible()
+
+
+def test_custom_categories_button_visible_for_spending_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_spending_report(pane)
+    assert pane.custom_categories_button.isVisible()
+
+
+def test_custom_categories_dialog_offers_all_categories_preselected(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "CategoryFilterDialog", _FakeCategoryFilterDialog)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.custom_categories_button.click()
+
+    all_names, selected_names = _FakeCategoryFilterDialog.last_init_args
+    assert all_names == {"Utilities", "Groceries"}
+    assert selected_names == {"Utilities", "Groceries"}
+
+
+def test_accepting_custom_categories_filters_table_and_chart(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "CategoryFilterDialog", _FakeCategoryFilterDialog)
+    _FakeCategoryFilterDialog.result = QDialog.Accepted
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+    pane.view_selector.setCurrentText("Pie Chart")
+
+    pane.custom_categories_button.click()
+
+    view = pane.category_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 0) == "Utilities"
+    series = pane.chart_view.chart().series()[0]
+    assert len(series.slices()) == 1
+    assert series.slices()[0].label() == "Utilities"
+
+
+def test_canceling_custom_categories_leaves_selection_unchanged(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "CategoryFilterDialog", _FakeCategoryFilterDialog)
+    _FakeCategoryFilterDialog.result = QDialog.Rejected
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.custom_categories_button.click()
+
+    view = pane.category_table_view
+    assert view.model().rowCount() == 2
+
+
+def test_reselecting_spending_report_resets_category_filter_to_all(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "CategoryFilterDialog", _FakeCategoryFilterDialog)
+    _FakeCategoryFilterDialog.result = QDialog.Accepted
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+    pane.custom_categories_button.click()
+    assert pane.category_table_view.model().rowCount() == 1
+
+    _select_net_worth_report(pane)
+    _select_spending_report(pane)
+
+    assert pane.category_table_view.model().rowCount() == 2
