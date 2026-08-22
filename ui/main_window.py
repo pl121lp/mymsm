@@ -4,10 +4,11 @@ from decimal import Decimal
 from functools import partial
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtCore import QSettings, Qt
+from PySide6.QtCore import QEvent, QSettings, Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QDoubleSpinBox,
     QFileDialog,
@@ -41,6 +42,7 @@ from models import (
     compute_account_value_history,
     format_currency,
 )
+from navigation_history import NavigationHistory
 from qfx_import import parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
@@ -54,6 +56,8 @@ DEFAULT_SEK_TO_USD_RATE = 0.095
 TRANSACTIONS_PAGE = 0
 VALUE_PAGE = 1
 
+ACCOUNTS_TAB = 0
+
 
 class MainWindow(QMainWindow):
     def __init__(self, conn, parent=None):
@@ -62,6 +66,11 @@ class MainWindow(QMainWindow):
         self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         self.setWindowTitle("Money Browser")
         self.resize(1000, 600)
+
+        self._history = NavigationHistory()
+        self._current_view = None
+        self._navigating_back = False
+        QApplication.instance().installEventFilter(self)
 
         self.account_model = AccountTableModel()
         self.transaction_model = TransactionTableModel()
@@ -179,14 +188,16 @@ class MainWindow(QMainWindow):
             self._conn, self.statusBar().showMessage, to_usd=self.account_model.to_usd,
         )
 
-        tabs = QTabWidget()
-        tabs.addTab(splitter, "Accounts")
-        tabs.addTab(dictionaries_tabs, "Dictionaries")
-        tabs.addTab(self.search_pane, "Search")
-        tabs.addTab(self.reports_pane, "Reports")
-        self.setCentralWidget(tabs)
+        self.tabs = QTabWidget()
+        self.tabs.addTab(splitter, "Accounts")
+        self.tabs.addTab(dictionaries_tabs, "Dictionaries")
+        self.tabs.addTab(self.search_pane, "Search")
+        self.tabs.addTab(self.reports_pane, "Reports")
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self.setCentralWidget(self.tabs)
 
         self._reload_accounts()
+        self._current_view = self._capture_view()
 
     def _apply_exchange_rate(self):
         rate = Decimal(str(self.sek_rate_spinbox.value()))
@@ -429,7 +440,48 @@ class MainWindow(QMainWindow):
         self._on_account_selected()
         self.statusBar().showMessage("Record deleted.")
 
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.MouseButtonPress and event.button() == Qt.BackButton:
+            self._go_back()
+            return True
+        return super().eventFilter(obj, event)
+
+    def _capture_view(self):
+        tab_index = self.tabs.currentIndex()
+        account_id = None
+        if tab_index == ACCOUNTS_TAB:
+            indexes = self.account_view.selectionModel().selectedRows()
+            if indexes:
+                account_id = self.account_model.account_id_at(indexes[0].row())
+        return (tab_index, account_id)
+
+    def _maybe_record_view_change(self):
+        new_view = self._capture_view()
+        if new_view == self._current_view:
+            return
+        if not self._navigating_back and self._current_view is not None:
+            self._history.push(self._current_view)
+        self._current_view = new_view
+
+    def _on_tab_changed(self, index):
+        self._maybe_record_view_change()
+
+    def _go_back(self):
+        view = self._history.pop()
+        if view is None:
+            return
+        self._navigating_back = True
+        try:
+            tab_index, account_id = view
+            self.tabs.setCurrentIndex(tab_index)
+            if tab_index == ACCOUNTS_TAB and account_id is not None:
+                self._select_account_row(account_id)
+        finally:
+            self._navigating_back = False
+        self._current_view = view
+
     def _on_account_selected(self, selected=None, deselected=None):
+        self._maybe_record_view_change()
         indexes = self.account_view.selectionModel().selectedRows()
         has_selection = bool(indexes)
         self.add_record_button.setEnabled(has_selection)

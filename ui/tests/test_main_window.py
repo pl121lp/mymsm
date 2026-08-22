@@ -1,7 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
 from main_window import MainWindow
@@ -684,6 +685,122 @@ def test_search_pane_edit_reloads_accounts_and_dictionaries_panes(qapp, conn, mo
         for r in range(window.payees_pane.list_model.rowCount())
     ]
     assert "Brand New Payee" in payee_names
+
+
+def test_going_back_with_empty_history_does_nothing(qapp, conn):
+    window = MainWindow(conn)
+
+    window._go_back()  # must not raise
+
+    assert window.tabs.currentIndex() == 0
+
+
+def test_going_back_reselects_previously_selected_account(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Brokerage"
+    )
+    window.account_view.selectRow(brokerage_row)
+
+    window._go_back()
+
+    selected_row = window.account_view.selectionModel().selectedRows()[0].row()
+    assert window.account_model.account_at(selected_row)[1] == "Checking"
+
+
+def test_going_back_returns_to_previous_tab(qapp, conn):
+    window = MainWindow(conn)
+    window.tabs.setCurrentIndex(2)  # Search tab
+
+    window._go_back()
+
+    assert window.tabs.currentIndex() == 0  # Accounts tab
+
+
+def test_going_back_twice_replays_tab_switch_then_account_switch(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # Checking
+    window.tabs.setCurrentIndex(2)  # Search tab
+    window.tabs.setCurrentIndex(0)  # back to Accounts tab (still Checking selected)
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Brokerage"
+    )
+    window.account_view.selectRow(brokerage_row)
+
+    window._go_back()
+    assert window.tabs.currentIndex() == 0
+    selected_row = window.account_view.selectionModel().selectedRows()[0].row()
+    assert window.account_model.account_at(selected_row)[1] == "Checking"
+
+    window._go_back()
+    assert window.tabs.currentIndex() == 2
+
+
+def test_going_back_after_reselecting_same_account_does_not_skip_a_step(qapp, conn, monkeypatch):
+    # Actions like adding a record re-select the already-selected row, which
+    # must not be recorded as a spurious navigation step.
+    import add_record_dialog
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # Checking
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Brokerage"
+    )
+    window.account_view.selectRow(brokerage_row)
+    window._on_add_record_button_clicked()  # re-selects Brokerage, dialog cancelled
+
+    window._go_back()
+
+    selected_row = window.account_view.selectionModel().selectedRows()[0].row()
+    assert window.account_model.account_at(selected_row)[1] == "Checking"
+
+
+def test_going_back_does_not_itself_get_recorded_as_a_step(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # Checking
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Brokerage"
+    )
+    window.account_view.selectRow(brokerage_row)
+
+    window._go_back()  # -> Checking
+    window._go_back()  # history should now be empty, must not bounce back to Brokerage
+
+    selected_row = window.account_view.selectionModel().selectedRows()[0].row()
+    assert window.account_model.account_at(selected_row)[1] == "Checking"
+
+
+def test_mouse_back_button_press_triggers_go_back(qapp, conn):
+    window = MainWindow(conn)
+    calls = []
+    window._go_back = lambda: calls.append(True)
+    event = QMouseEvent(
+        QEvent.MouseButtonPress, QPointF(0, 0), QPointF(0, 0), Qt.BackButton, Qt.BackButton, Qt.NoModifier
+    )
+
+    window.eventFilter(window, event)
+
+    assert calls == [True]
+
+
+def test_other_mouse_buttons_do_not_trigger_go_back(qapp, conn):
+    window = MainWindow(conn)
+    calls = []
+    window._go_back = lambda: calls.append(True)
+    event = QMouseEvent(
+        QEvent.MouseButtonPress, QPointF(0, 0), QPointF(0, 0), Qt.LeftButton, Qt.LeftButton, Qt.NoModifier
+    )
+
+    window.eventFilter(window, event)
+
+    assert calls == []
 
 
 def test_transaction_edit_does_nothing_on_cancel(qapp, conn, monkeypatch):
