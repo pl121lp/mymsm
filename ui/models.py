@@ -173,7 +173,7 @@ class SpendingByCategoryTableModel(QAbstractTableModel):
 
 
 class AccountTableModel(QAbstractTableModel):
-    COLUMNS = ["Name", "Type", "Currency", "Balance", "Actions"]
+    COLUMNS = ["Name", "Type", "Currency", "Balance"]
 
     def __init__(self, accounts=None, parent=None):
         super().__init__(parent)

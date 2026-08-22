@@ -12,6 +12,7 @@ from writes import (
     delete_transaction,
     import_transactions,
     set_account_closed,
+    update_account,
     update_transaction,
 )
 
@@ -42,6 +43,22 @@ def test_set_account_closed_reopens_closed_account(conn):
     set_account_closed(conn, account_id=2, is_closed=False)
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
     assert row == (False,)
+
+
+def test_update_account_changes_name_and_opening_balance(conn):
+    update_account(conn, account_id=1, name="Checking Renamed", opening_balance=Decimal("200.00"))
+    row = conn.execute(
+        "SELECT name, opening_balance FROM accounts WHERE account_id = 1"
+    ).fetchone()
+    assert row == ("Checking Renamed", Decimal("200.00"))
+
+
+def test_update_account_leaves_other_fields_intact(conn):
+    update_account(conn, account_id=1, name="Checking Renamed", opening_balance=Decimal("200.00"))
+    row = conn.execute(
+        "SELECT account_type, currency, is_closed FROM accounts WHERE account_id = 1"
+    ).fetchone()
+    assert row == ("Bank", "USD", False)
 
 
 def test_delete_transaction_removes_the_transaction_row(conn):

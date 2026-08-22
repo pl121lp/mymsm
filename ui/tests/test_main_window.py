@@ -9,26 +9,14 @@ from main_window import MainWindow
 
 def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
     window = MainWindow(conn)
-    labels = [
-        window.total_label,
-        window.account_details_label,
-        window.details_name_value,
-        window.details_type_value,
-        window.details_currency_value,
-        window.details_opening_balance_value,
-        window.details_balance_value,
-        window.details_status_value,
-    ]
+    labels = [window.total_label, window.account_details_label]
     for label in labels:
         assert label.textInteractionFlags() & Qt.TextSelectableByMouse
 
 
-def test_account_rows_have_add_record_button(qapp, conn):
+def test_accounts_table_has_no_actions_column(qapp, conn):
     window = MainWindow(conn)
-    actions_col = window.account_model.COLUMNS.index("Actions")
-    container = window.account_view.indexWidget(window.account_model.index(0, actions_col))
-    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
-    assert "Add Record" in button_tooltips
+    assert "Actions" not in window.account_model.COLUMNS
 
 
 def test_add_record_button_reloads_account_on_accept(qapp, conn, monkeypatch):
@@ -45,9 +33,10 @@ def test_add_record_button_reloads_account_on_accept(qapp, conn, monkeypatch):
     monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Accepted)
 
     window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (cash account, see conn fixture ordering)
     reload_calls.clear()  # drop the reload that happened during __init__
 
-    window._on_add_record_button_clicked(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+    window._on_add_record_button_clicked()
 
     assert reload_calls == [True]
     assert window.statusBar().currentMessage() == "Record added."
@@ -67,9 +56,10 @@ def test_add_record_button_does_nothing_on_cancel(qapp, conn, monkeypatch):
     monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Rejected)
 
     window = MainWindow(conn)
+    window.account_view.selectRow(1)
     reload_calls.clear()
 
-    window._on_add_record_button_clicked(1)
+    window._on_add_record_button_clicked()
 
     assert reload_calls == []
 
@@ -90,7 +80,8 @@ def test_add_record_button_reloads_dictionaries_pane(qapp, conn, monkeypatch):
     monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", fake_exec)
 
     window = MainWindow(conn)
-    window._on_add_record_button_clicked(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+    window.account_view.selectRow(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+    window._on_add_record_button_clicked()
 
     payee_names = [
         window.payees_pane.list_model.data(window.payees_pane.list_model.index(r))
@@ -289,30 +280,6 @@ def test_import_button_defaults_to_selected_account(qapp, conn, monkeypatch):
     assert captured["default_account_id"] == 1
 
 
-def test_open_account_row_has_close_button(qapp, conn):
-    window = MainWindow(conn)
-    actions_col = window.account_model.COLUMNS.index("Actions")
-    # row 1 = Checking, an open account (see conn fixture ordering).
-    container = window.account_view.indexWidget(window.account_model.index(1, actions_col))
-    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
-    assert "Close" in button_tooltips
-    assert "Reopen" not in button_tooltips
-
-
-def test_closed_account_row_has_reopen_button(qapp, conn):
-    window = MainWindow(conn)
-    window.show_closed_checkbox.setChecked(True)
-    actions_col = window.account_model.COLUMNS.index("Actions")
-    closed_row = next(
-        row for row in range(window.account_model.rowCount())
-        if window.account_model.account_at(row)[1] == "Old Card"
-    )
-    container = window.account_view.indexWidget(window.account_model.index(closed_row, actions_col))
-    button_tooltips = [child.toolTip() for child in container.findChildren(QPushButton)]
-    assert "Reopen" in button_tooltips
-    assert "Close" not in button_tooltips
-
-
 def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
 
@@ -373,13 +340,14 @@ def test_reopen_button_reopens_account_and_reloads(qapp, conn, monkeypatch):
     assert window.statusBar().currentMessage() == "Account reopened."
 
 
-def test_context_actions_empty_for_open_account_row(qapp, conn):
+def test_context_actions_offer_close_for_open_account_row(qapp, conn):
     window = MainWindow(conn)
     # row 1 = Checking, an open account (see conn fixture ordering).
-    assert window._account_context_actions(1) == []
+    labels = [label for label, _callback in window._account_context_actions(1)]
+    assert labels == ["Close Account"]
 
 
-def test_context_actions_include_delete_for_closed_account_row(qapp, conn):
+def test_context_actions_offer_reopen_and_delete_for_closed_account_row(qapp, conn):
     window = MainWindow(conn)
     window.show_closed_checkbox.setChecked(True)
     closed_row = next(
@@ -387,7 +355,18 @@ def test_context_actions_include_delete_for_closed_account_row(qapp, conn):
         if window.account_model.account_at(row)[1] == "Old Card"
     )
     labels = [label for label, _callback in window._account_context_actions(closed_row)]
-    assert labels == ["Delete Account"]
+    assert labels == ["Reopen Account", "Delete Account"]
+
+
+def test_close_account_context_action_invokes_toggle_closed(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+    window = MainWindow(conn)
+
+    _label, callback = window._account_context_actions(1)[0]
+    callback()
+
+    row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (True,)
 
 
 def test_delete_account_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
@@ -456,6 +435,132 @@ def test_delete_account_confirmation_mentions_transaction_count(qapp, conn, monk
     window._on_delete_account_clicked(closed_row)
 
     assert "2" in seen_messages[0]
+
+
+def test_header_controls_disabled_when_no_account_selected(qapp, conn):
+    window = MainWindow(conn)
+    assert not window.add_record_button.isEnabled()
+    assert not window.account_details_button.isEnabled()
+    assert not window.value_checkbox.isEnabled()
+
+
+def test_header_controls_enabled_when_account_selected(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    assert window.add_record_button.isEnabled()
+    assert window.account_details_button.isEnabled()
+    assert window.value_checkbox.isEnabled()
+
+
+def test_account_details_button_opens_dialog_with_selected_account_fields(qapp, conn, monkeypatch):
+    import account_details_dialog
+
+    captured = {}
+    original_init = account_details_dialog.AccountDetailsDialog.__init__
+
+    def spy_init(self, **kwargs):
+        captured.update(kwargs)
+        original_init(self, **kwargs)
+
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "__init__", spy_init)
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (open, USD, see conn fixture ordering)
+
+    window._on_account_details_button_clicked()
+
+    assert captured["account_id"] == 1
+    assert captured["name"] == "Checking"
+    assert captured["currency"] == "USD"
+    assert captured["opening_balance"] == Decimal("100.00")
+    assert captured["status_text"] == "Open"
+    assert "1,047.70" in captured["balance_text"]  # opening 100.00 plus seeded transactions
+
+
+def test_account_details_button_shows_closed_status_for_closed_account(qapp, conn, monkeypatch):
+    import account_details_dialog
+
+    captured = {}
+    original_init = account_details_dialog.AccountDetailsDialog.__init__
+
+    def spy_init(self, **kwargs):
+        captured.update(kwargs)
+        original_init(self, **kwargs)
+
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "__init__", spy_init)
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.show_closed_checkbox.setChecked(True)
+    closed_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Old Card"
+    )
+    window.account_view.selectRow(closed_row)
+
+    window._on_account_details_button_clicked()
+
+    assert captured["name"] == "Old Card"  # no "(CLOSED)" prefix; status_text conveys that
+    assert captured["status_text"] == "Closed"
+
+
+def test_account_details_save_renames_account_and_refreshes_list(qapp, conn, monkeypatch):
+    import account_details_dialog
+    import writes
+
+    def fake_exec(self):
+        writes.update_account(
+            self._conn, self._account_id, name="Checking Renamed", opening_balance=Decimal("250.00")
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+
+    window._on_account_details_button_clicked()
+
+    selected_row = window.account_view.selectionModel().selectedRows()[0].row()
+    account_id, name, *_ = window.account_model.account_at(selected_row)
+    assert account_id == 1
+    assert name == "Checking Renamed"
+    assert window.statusBar().currentMessage() == "Account updated."
+
+
+def test_value_checkbox_checked_shows_chart_page(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+
+    window.value_checkbox.setChecked(True)
+
+    assert window.content_stack.currentWidget() is window.value_chart_view
+
+
+def test_value_checkbox_unchecked_shows_transaction_table(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    window.value_checkbox.setChecked(True)
+
+    window.value_checkbox.setChecked(False)
+
+    assert window.content_stack.currentWidget() is window.transaction_view
+
+
+def test_selecting_new_account_resets_value_checkbox_and_content_page(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    window.value_checkbox.setChecked(True)
+
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Brokerage"
+    )
+    window.account_view.selectRow(brokerage_row)
+
+    assert not window.value_checkbox.isChecked()
+    assert window.content_stack.currentWidget() is window.transaction_view
 
 
 def test_transaction_double_click_opens_edit_dialog_for_clicked_transaction(qapp, conn, monkeypatch):

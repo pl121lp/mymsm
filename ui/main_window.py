@@ -11,7 +11,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDoubleSpinBox,
     QFileDialog,
-    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -28,6 +27,7 @@ from PySide6.QtWidgets import (
 
 import data
 import writes
+from account_details_dialog import AccountDetailsDialog
 from add_account_dialog import AddAccountDialog
 from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
@@ -52,10 +52,7 @@ SETTINGS_KEY_SEK_RATE = "sek_to_usd_rate"
 DEFAULT_SEK_TO_USD_RATE = 0.095
 
 TRANSACTIONS_PAGE = 0
-DETAILS_PAGE = 1
-VALUE_PAGE = 2
-
-ROW_BUTTON_STYLE = "padding: 1px 6px;"
+VALUE_PAGE = 1
 
 
 class MainWindow(QMainWindow):
@@ -123,49 +120,32 @@ class MainWindow(QMainWindow):
             extra_actions=self._transaction_context_actions,
         )
 
-        transactions_page = QWidget()
-        transactions_layout = QVBoxLayout(transactions_page)
-        transactions_layout.addWidget(self.account_details_label)
-        transactions_layout.addWidget(self.transaction_view)
-
-        self.details_name_value = QLabel()
-        self.details_type_value = QLabel()
-        self.details_currency_value = QLabel()
-        self.details_opening_balance_value = QLabel()
-        self.details_balance_value = QLabel()
-        self.details_status_value = QLabel()
-        for value_label in (
-            self.details_name_value,
-            self.details_type_value,
-            self.details_currency_value,
-            self.details_opening_balance_value,
-            self.details_balance_value,
-            self.details_status_value,
-        ):
-            enable_label_copy(value_label)
-
-        details_page = QWidget()
-        details_form = QFormLayout(details_page)
-        details_form.addRow("Name:", self.details_name_value)
-        details_form.addRow("Type:", self.details_type_value)
-        details_form.addRow("Currency:", self.details_currency_value)
-        details_form.addRow("Starting balance:", self.details_opening_balance_value)
-        self.details_balance_label = QLabel("Balance:")
-        details_form.addRow(self.details_balance_label, self.details_balance_value)
-        details_form.addRow("Status:", self.details_status_value)
-        details_form.setAlignment(Qt.AlignTop)
-
         self.value_chart_view = QChartView()
         self.value_chart_view.setRenderHint(QPainter.Antialiasing)
 
-        value_page = QWidget()
-        value_layout = QVBoxLayout(value_page)
-        value_layout.addWidget(self.value_chart_view)
+        self.add_record_button = QPushButton("Add Record")
+        self.add_record_button.clicked.connect(self._on_add_record_button_clicked)
 
-        self.right_stack = QStackedWidget()
-        self.right_stack.addWidget(transactions_page)
-        self.right_stack.addWidget(details_page)
-        self.right_stack.addWidget(value_page)
+        self.account_details_button = QPushButton("Account Details")
+        self.account_details_button.clicked.connect(self._on_account_details_button_clicked)
+
+        self.value_checkbox = QCheckBox("Value")
+        self.value_checkbox.toggled.connect(self._on_value_checkbox_toggled)
+
+        header_row = QHBoxLayout()
+        header_row.addWidget(self.account_details_label, 1)
+        header_row.addWidget(self.add_record_button)
+        header_row.addWidget(self.account_details_button)
+        header_row.addWidget(self.value_checkbox)
+
+        self.content_stack = QStackedWidget()
+        self.content_stack.addWidget(self.transaction_view)
+        self.content_stack.addWidget(self.value_chart_view)
+
+        transactions_page = QWidget()
+        transactions_layout = QVBoxLayout(transactions_page)
+        transactions_layout.addLayout(header_row)
+        transactions_layout.addWidget(self.content_stack)
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
@@ -177,7 +157,7 @@ class MainWindow(QMainWindow):
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left)
-        splitter.addWidget(self.right_stack)
+        splitter.addWidget(transactions_page)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
@@ -229,83 +209,62 @@ class MainWindow(QMainWindow):
             return
         self.account_model.set_accounts(accounts)
         self.account_view.resizeColumnsToContents()
-        self._install_row_action_buttons()
         self._update_total_label()
         self.account_details_label.setText("")
         self.transaction_model.set_transactions([])
-        self.right_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+        self.add_record_button.setEnabled(False)
+        self.account_details_button.setEnabled(False)
+        self.value_checkbox.setEnabled(False)
+        self.value_checkbox.setChecked(False)
+        self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
 
-    def _install_row_action_buttons(self):
-        actions_col = self.account_model.COLUMNS.index("Actions")
-        column_width = 0
+    def _select_account_row(self, account_id):
         for row in range(self.account_model.rowCount()):
-            container = QWidget()
-            layout = QHBoxLayout(container)
-            layout.setContentsMargins(2, 0, 2, 0)
-            layout.setSpacing(4)
+            if self.account_model.account_id_at(row) == account_id:
+                self.account_view.selectRow(row)
+                return
 
-            details_button = QPushButton("D")
-            details_button.setToolTip("Details")
-            details_button.setStyleSheet(ROW_BUTTON_STYLE)
-            details_button.clicked.connect(partial(self._on_details_button_clicked, row))
-            layout.addWidget(details_button)
-
-            transactions_button = QPushButton("T")
-            transactions_button.setToolTip("Transactions")
-            transactions_button.setStyleSheet(ROW_BUTTON_STYLE)
-            transactions_button.clicked.connect(partial(self._on_transactions_button_clicked, row))
-            layout.addWidget(transactions_button)
-
-            value_button = QPushButton("V")
-            value_button.setToolTip("Value")
-            value_button.setStyleSheet(ROW_BUTTON_STYLE)
-            value_button.clicked.connect(partial(self._on_value_button_clicked, row))
-            layout.addWidget(value_button)
-
-            add_record_button = QPushButton("A")
-            add_record_button.setToolTip("Add Record")
-            add_record_button.setStyleSheet(ROW_BUTTON_STYLE)
-            add_record_button.clicked.connect(partial(self._on_add_record_button_clicked, row))
-            layout.addWidget(add_record_button)
-
-            _, _, _, _, _, is_closed = self.account_model.account_at(row)
-            toggle_closed_button = QPushButton("R" if is_closed else "C")
-            toggle_closed_button.setToolTip("Reopen" if is_closed else "Close")
-            toggle_closed_button.setStyleSheet(ROW_BUTTON_STYLE)
-            toggle_closed_button.clicked.connect(partial(self._on_toggle_closed_button_clicked, row))
-            layout.addWidget(toggle_closed_button)
-
-            self.account_view.setIndexWidget(self.account_model.index(row, actions_col), container)
-            column_width = max(column_width, container.sizeHint().width())
-        if column_width:
-            self.account_view.horizontalHeader().resizeSection(actions_col, column_width)
-
-    def _on_transactions_button_clicked(self, row):
-        self.account_view.selectRow(row)
-        self._on_account_selected()
-
-    def _on_details_button_clicked(self, row):
+    def _on_account_details_button_clicked(self):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        row = indexes[0].row()
         account_id, name, account_type, currency, balance, is_closed = self.account_model.account_at(
             row
         )
         opening_balance = data.get_opening_balance(self._conn, account_id)
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
-
-        self.details_name_value.setText(f"(CLOSED) {name}" if is_closed else name)
-        self.details_type_value.setText(account_type_label(account_type))
-        self.details_currency_value.setText(currency)
-        self.details_opening_balance_value.setText(
-            f"{format_currency(opening_balance)} {currency}" if opening_balance is not None else ""
-        )
-        self.details_balance_label.setText("Value:" if is_investment else "Balance:")
         usd_balance = self.account_model.to_usd(currency, balance)
-        self.details_balance_value.setText(f"{format_currency(usd_balance)} USD")
-        self.details_status_value.setText("Closed" if is_closed else "Open")
 
-        self.right_stack.setCurrentIndex(DETAILS_PAGE)
+        dialog = AccountDetailsDialog(
+            conn=self._conn,
+            account_id=account_id,
+            name=name,
+            account_type_label=account_type_label(account_type),
+            currency=currency,
+            opening_balance=opening_balance,
+            balance_label="Value:" if is_investment else "Balance:",
+            balance_text=f"{format_currency(usd_balance)} USD",
+            status_text="Closed" if is_closed else "Open",
+            parent=self,
+        )
+        if dialog.exec() != AccountDetailsDialog.Accepted:
+            return
+        self._reload_accounts()
+        self._select_account_row(account_id)
+        self.statusBar().showMessage("Account updated.")
 
-    def _on_value_button_clicked(self, row):
-        account_id, name, account_type, currency, _, _ = self.account_model.account_at(row)
+    def _on_value_checkbox_toggled(self, checked):
+        if not checked:
+            self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+            return
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+            return
+        account_id, name, account_type, currency, _, _ = self.account_model.account_at(
+            indexes[0].row()
+        )
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
         opening_balance = data.get_opening_balance(self._conn, account_id)
         try:
@@ -320,7 +279,7 @@ class MainWindow(QMainWindow):
         ]
         chart = build_line_chart(f"{name} — Value (USD)", [(name, usd_history)])
         self.value_chart_view.setChart(chart)
-        self.right_stack.setCurrentIndex(VALUE_PAGE)
+        self.content_stack.setCurrentIndex(VALUE_PAGE)
 
     def _refresh_after_write(self):
         self._reload_accounts()
@@ -328,7 +287,11 @@ class MainWindow(QMainWindow):
         self.payees_pane._reload()
         self.investments_pane._reload()
 
-    def _on_add_record_button_clicked(self, row):
+    def _on_add_record_button_clicked(self):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        row = indexes[0].row()
         account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
             row
         )
@@ -397,8 +360,11 @@ class MainWindow(QMainWindow):
             row
         )
         if not is_closed:
-            return []
-        return [("Delete Account", partial(self._on_delete_account_clicked, row))]
+            return [("Close Account", partial(self._on_toggle_closed_button_clicked, row))]
+        return [
+            ("Reopen Account", partial(self._on_toggle_closed_button_clicked, row)),
+            ("Delete Account", partial(self._on_delete_account_clicked, row)),
+        ]
 
     def _on_delete_account_clicked(self, row):
         account_id, name, _account_type, _currency, _balance, _is_closed = self.account_model.account_at(
@@ -464,8 +430,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Record deleted.")
 
     def _on_account_selected(self, selected=None, deselected=None):
-        self.right_stack.setCurrentIndex(TRANSACTIONS_PAGE)
         indexes = self.account_view.selectionModel().selectedRows()
+        has_selection = bool(indexes)
+        self.add_record_button.setEnabled(has_selection)
+        self.account_details_button.setEnabled(has_selection)
+        self.value_checkbox.setEnabled(has_selection)
+        self.value_checkbox.setChecked(False)
+        self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
         if not indexes:
             self.account_details_label.setText("")
             self.transaction_model.set_transactions([])

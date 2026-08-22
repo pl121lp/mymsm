@@ -35,6 +35,14 @@ def add_account(conn, name, account_type, currency, opening_balance):
     return account_id
 
 
+def update_account(conn, account_id, name, opening_balance):
+    """Updates an account's name and starting (opening) balance."""
+    conn.execute(
+        "UPDATE accounts SET name = ?, opening_balance = ? WHERE account_id = ?",
+        [name, opening_balance, account_id],
+    )
+
+
 def set_account_closed(conn, account_id, is_closed):
     """Sets an account's closed status. Used for both closing and reopening."""
     conn.execute(
