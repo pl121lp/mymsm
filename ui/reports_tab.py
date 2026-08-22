@@ -6,6 +6,7 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QComboBox,
     QDateEdit,
     QHBoxLayout,
     QLabel,
@@ -19,7 +20,7 @@ from PySide6.QtWidgets import (
 from PySide6.QtCharts import QChart, QChartView
 
 import data
-from charts import build_bar_chart
+from charts import build_bar_chart, build_pie_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from models import (
     DictionaryListModel,
@@ -52,6 +53,7 @@ class ReportsPane(QWidget):
         self._active_report_id = None
         self._net_worth_accounts = []
         self._category_spending = []
+        self._category_totals = []
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -69,6 +71,17 @@ class ReportsPane(QWidget):
         self.category_table_view.horizontalHeader().setStretchLastSection(True)
         self.category_table_view.setVisible(False)
         enable_cell_copy(self.category_table_view)
+
+        self.view_selector = QComboBox()
+        self.view_selector.addItems(["Table", "Pie Chart"])
+        self.view_selector.currentIndexChanged.connect(self._on_view_mode_changed)
+        self.view_selector_row = QWidget()
+        view_selector_row_layout = QHBoxLayout(self.view_selector_row)
+        view_selector_row_layout.setContentsMargins(0, 0, 0, 0)
+        view_selector_row_layout.addWidget(QLabel("View:"))
+        view_selector_row_layout.addWidget(self.view_selector)
+        view_selector_row_layout.addStretch()
+        self.view_selector_row.setVisible(False)
 
         self.range_label = QLabel()
 
@@ -92,6 +105,7 @@ class ReportsPane(QWidget):
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(self.chart_view)
         chart_layout.addWidget(self.category_table_view)
+        chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.range_label)
         chart_layout.addLayout(range_row)
 
@@ -111,15 +125,30 @@ class ReportsPane(QWidget):
             self.chart_view.setChart(QChart())
             self.category_table_model.set_categories([])
             self.range_label.setText("")
+            self.view_selector_row.setVisible(False)
             return
         report_id = self.list_model.id_at(indexes[0].row())
         self._active_report_id = report_id
+        self.view_selector_row.setVisible(report_id == SPENDING_BY_CATEGORY_REPORT_ID)
+        if report_id == SPENDING_BY_CATEGORY_REPORT_ID:
+            self.view_selector.blockSignals(True)
+            self.view_selector.setCurrentIndex(0)
+            self.view_selector.blockSignals(False)
         self.chart_view.setVisible(report_id == NET_WORTH_REPORT_ID)
         self.category_table_view.setVisible(report_id == SPENDING_BY_CATEGORY_REPORT_ID)
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
         elif report_id == SPENDING_BY_CATEGORY_REPORT_ID:
             self._load_spending_by_category_report()
+
+    def _on_view_mode_changed(self):
+        if self._active_report_id != SPENDING_BY_CATEGORY_REPORT_ID:
+            return
+        is_pie_chart = self.view_selector.currentText() == "Pie Chart"
+        self.chart_view.setVisible(is_pie_chart)
+        self.category_table_view.setVisible(not is_pie_chart)
+        if is_pie_chart:
+            self._render_pie_chart()
 
     def _load_net_worth_report(self):
         try:
@@ -221,5 +250,12 @@ class ReportsPane(QWidget):
         categories = compute_spending_by_category(
             self._category_spending, start, end, self._to_usd
         )
+        self._category_totals = categories
         self.category_table_model.set_categories(categories)
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+        if self.view_selector.currentText() == "Pie Chart":
+            self._render_pie_chart()
+
+    def _render_pie_chart(self):
+        chart = build_pie_chart("Spending by Category (USD)", self._category_totals)
+        self.chart_view.setChart(chart)

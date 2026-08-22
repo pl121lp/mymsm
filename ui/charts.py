@@ -7,6 +7,7 @@ from PySide6.QtCharts import (
     QChart,
     QDateTimeAxis,
     QLineSeries,
+    QPieSeries,
     QValueAxis,
 )
 from PySide6.QtCore import QDateTime, Qt
@@ -103,5 +104,32 @@ def build_bar_chart(title, categories, values):
         axis_y.setRange(y_min, y_max)
     chart.addAxis(axis_y, Qt.AlignLeft)
     series.attachAxis(axis_y)
+
+    return chart
+
+
+def build_pie_chart(title, categories):
+    """Build a pie chart with one slice per category.
+
+    categories is a list of (label, value) pairs, e.g. from
+    compute_spending_by_category(). Each slice shows its percentage of the
+    total; hovering a slice shows its label and value in a tooltip.
+    """
+    chart = QChart()
+    chart.setTitle(title)
+
+    series = QPieSeries()
+    for label, value in categories:
+        pie_slice = series.append(label, float(value))
+        pie_slice.setLabelVisible(True)
+
+    def _on_slice_hovered(pie_slice, state):
+        if state:
+            QToolTip.showText(QCursor.pos(), f"{pie_slice.label()}: {pie_slice.value():.2f}")
+        else:
+            QToolTip.hideText()
+
+    series.hovered.connect(_on_slice_hovered)
+    chart.addSeries(series)
 
     return chart

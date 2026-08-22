@@ -142,3 +142,45 @@ def test_updating_spending_range_with_start_after_end_reports_error_and_keeps_ta
     assert errors == ["Start date must be on or before end date."]
     assert pane.range_label.text() == "Showing 2024-03-01 to 2024-03-15"
     assert pane.category_table_view.model().rowCount() == 2
+
+
+def test_spending_report_defaults_to_table_view_with_selector_hidden_elsewhere(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert not pane.view_selector.isVisible()
+
+    _select_spending_report(pane)
+    assert pane.view_selector.isVisible()
+    assert pane.view_selector.currentText() == "Table"
+    assert pane.category_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+
+
+def test_switching_spending_report_to_pie_chart_shows_chart_and_hides_table(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_spending_report(pane)
+
+    pane.view_selector.setCurrentText("Pie Chart")
+
+    assert pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    series = pane.chart_view.chart().series()[0]
+    assert len(series.slices()) == 2
+    assert series.slices()[0].label() == "Utilities"
+
+
+def test_updating_range_recomputes_pie_chart_for_narrower_window(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_spending_report(pane)
+    pane.view_selector.setCurrentText("Pie Chart")
+
+    pane.start_date_edit.setDate(QDate(2024, 3, 12))
+    pane.end_date_edit.setDate(QDate(2024, 3, 31))
+    pane.update_range_button.click()
+
+    series = pane.chart_view.chart().series()[0]
+    assert len(series.slices()) == 1
+    assert series.slices()[0].label() == "Groceries"
