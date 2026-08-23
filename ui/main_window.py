@@ -4,8 +4,9 @@ from decimal import Decimal
 from functools import partial
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtCore import QEvent, QSettings, Qt
+from PySide6.QtCore import QEvent, QSettings, Qt, QUrl
 from PySide6.QtGui import QPainter
+from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -34,6 +35,7 @@ from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
+from exchange_rate import FRANKFURTER_URL, parse_rate_response
 from import_qfx_dialog import ImportQfxDialog
 from models import (
     AccountTableModel,
@@ -90,10 +92,16 @@ class MainWindow(QMainWindow):
         self.sek_rate_spinbox.valueChanged.connect(self._on_exchange_rate_changed)
         self._apply_exchange_rate()
 
+        self._network_manager = QNetworkAccessManager(self)
+
+        self.refresh_rate_button = QPushButton("Refresh")
+        self.refresh_rate_button.clicked.connect(self._on_refresh_rate_button_clicked)
+
         rate_row = QHBoxLayout()
         rate_row.addWidget(QLabel("1 SEK ="))
         rate_row.addWidget(self.sek_rate_spinbox)
         rate_row.addWidget(QLabel("USD"))
+        rate_row.addWidget(self.refresh_rate_button)
         rate_row.addStretch()
 
         self.show_closed_checkbox = QCheckBox("Show only closed accounts")
@@ -161,10 +169,10 @@ class MainWindow(QMainWindow):
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.addWidget(self.total_label)
-        left_layout.addLayout(rate_row)
         left_layout.addWidget(self.show_closed_checkbox)
-        left_layout.addLayout(new_account_row)
         left_layout.addWidget(self.account_view)
+        left_layout.addLayout(rate_row)
+        left_layout.addLayout(new_account_row)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(left)
@@ -212,6 +220,33 @@ class MainWindow(QMainWindow):
         self._settings.setValue(SETTINGS_KEY_SEK_RATE, value)
         self._apply_exchange_rate()
         self._update_total_label()
+
+    def _on_refresh_rate_button_clicked(self):
+        request = QNetworkRequest(QUrl(FRANKFURTER_URL))
+        request.setTransferTimeout(5000)
+        reply = self._network_manager.get(request)
+        self.refresh_rate_button.setEnabled(False)
+        reply.finished.connect(partial(self._on_rate_reply_finished, reply))
+
+    def _on_rate_reply_finished(self, reply):
+        ok = reply.error() == QNetworkReply.NetworkError.NoError
+        body = bytes(reply.readAll())
+        reply.deleteLater()
+        self._apply_rate_response(ok, body)
+
+    def _apply_rate_response(self, ok, body):
+        rate = None
+        if ok:
+            try:
+                rate = parse_rate_response(body)
+            except ValueError:
+                rate = None
+        if rate is None:
+            self.statusBar().showMessage("Couldn't fetch exchange rate — using saved value.")
+        else:
+            self.sek_rate_spinbox.setValue(float(rate))
+            self.statusBar().showMessage(f"Exchange rate updated: 1 SEK = {rate} USD")
+        self.refresh_rate_button.setEnabled(True)
 
     def _reload_accounts(self):
         only_closed = self.show_closed_checkbox.isChecked()

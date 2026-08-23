@@ -1,11 +1,12 @@
 from datetime import date
 from decimal import Decimal
 
+import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
-from main_window import MainWindow
+from main_window import SETTINGS_KEY_SEK_RATE, MainWindow
 
 
 def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
@@ -908,3 +909,67 @@ def test_transaction_edit_does_nothing_on_cancel(qapp, conn, monkeypatch):
 
     assert reload_calls == []
     assert window.statusBar().currentMessage() != "Record updated."
+
+
+def test_refresh_rate_button_requests_frankfurter_rate(qapp, conn):
+    from exchange_rate import FRANKFURTER_URL
+
+    window = MainWindow(conn)
+    captured = []
+
+    class FakeSignal:
+        def connect(self, _callback):
+            pass
+
+    class FakeReply:
+        finished = FakeSignal()
+
+        def error(self):
+            return None
+
+    def fake_get(request):
+        captured.append(request)
+        return FakeReply()
+
+    window._network_manager.get = fake_get
+
+    window._on_refresh_rate_button_clicked()
+
+    assert len(captured) == 1
+    assert captured[0].url().toString() == FRANKFURTER_URL
+    assert window.refresh_rate_button.isEnabled() is False
+
+
+def test_apply_rate_response_updates_spinbox_on_success(qapp, conn):
+    window = MainWindow(conn)
+    window.refresh_rate_button.setEnabled(False)
+    body = b'{"amount":1.0,"base":"SEK","date":"2024-01-01","rates":{"USD":0.1234}}'
+
+    window._apply_rate_response(True, body)
+
+    assert window.sek_rate_spinbox.value() == pytest.approx(0.1234)
+    assert window._settings.value(SETTINGS_KEY_SEK_RATE, type=float) == pytest.approx(0.1234)
+    assert "0.1234" in window.statusBar().currentMessage()
+    assert window.refresh_rate_button.isEnabled() is True
+
+
+def test_apply_rate_response_keeps_cached_value_on_network_failure(qapp, conn):
+    window = MainWindow(conn)
+    window.sek_rate_spinbox.setValue(0.2)
+    window.refresh_rate_button.setEnabled(False)
+
+    window._apply_rate_response(False, b"")
+
+    assert window.sek_rate_spinbox.value() == pytest.approx(0.2)
+    assert "saved value" in window.statusBar().currentMessage()
+    assert window.refresh_rate_button.isEnabled() is True
+
+
+def test_apply_rate_response_keeps_cached_value_on_bad_body(qapp, conn):
+    window = MainWindow(conn)
+    window.sek_rate_spinbox.setValue(0.2)
+
+    window._apply_rate_response(True, b"not json")
+
+    assert window.sek_rate_spinbox.value() == pytest.approx(0.2)
+    assert "saved value" in window.statusBar().currentMessage()
