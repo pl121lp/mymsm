@@ -184,6 +184,22 @@ def compute_spending_by_category(transactions, start, end, to_usd):
     return sorted(totals.items(), key=lambda item: item[1], reverse=True)
 
 
+def compute_income_by_category(transactions, start, end, to_usd):
+    """Total income (USD) per category within [start, end], highest first.
+
+    `transactions` are (category_id, category_name, txn_date, amount, currency)
+    rows, e.g. from data.list_category_spending(). Only positive amounts (money
+    in) count as income; negative amounts (spending posted to an income
+    category) are ignored.
+    """
+    totals = {}
+    for _category_id, category_name, txn_date, amount, currency in transactions:
+        if txn_date < start or txn_date > end or amount <= 0:
+            continue
+        totals[category_name] = totals.get(category_name, Decimal("0")) + to_usd(currency, amount)
+    return sorted(totals.items(), key=lambda item: item[1], reverse=True)
+
+
 class SpendingByCategoryTableModel(QAbstractTableModel):
     COLUMNS = ["Category", "Spending (USD)"]
 
@@ -195,6 +211,9 @@ class SpendingByCategoryTableModel(QAbstractTableModel):
         self.beginResetModel()
         self._categories = categories
         self.endResetModel()
+
+    def category_at(self, row):
+        return self._categories[row]
 
     def rowCount(self, parent=None):
         return len(self._categories)
@@ -213,6 +232,10 @@ class SpendingByCategoryTableModel(QAbstractTableModel):
         category_name, total = self._categories[index.row()]
         values = [category_name, format_currency(total)]
         return values[index.column()]
+
+
+class IncomeByCategoryTableModel(SpendingByCategoryTableModel):
+    COLUMNS = ["Category", "Income (USD)"]
 
 
 class AccountTableModel(QAbstractTableModel):

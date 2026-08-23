@@ -19,6 +19,23 @@ def _select_spending_report(pane):
     )
 
 
+def _select_income_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(2, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _add_income_transactions(conn):
+    conn.execute(
+        "INSERT INTO categories VALUES (30, 'Salary'), (31, 'Freelance')"
+    )
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(2000, 1, 30, NULL, '2024-03-01', 1200.00, 'paycheck', NULL, NULL, NULL, NULL, NULL), "
+        "(2001, 2, 31, NULL, '2024-03-15', 300.00, 'contract work', NULL, NULL, NULL, NULL, NULL)"
+    )
+
+
 def _table_cell(view, row, col):
     return view.model().data(view.model().index(row, col), Qt.DisplayRole)
 
@@ -37,6 +54,11 @@ def test_reports_list_shows_net_worth_report(qapp, dict_conn):
 def test_reports_list_shows_spending_by_category_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.data(pane.list_model.index(1, 0)) == "Spending by category"
+
+
+def test_reports_list_shows_income_by_category_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.data(pane.list_model.index(2, 0)) == "Income by category"
 
 
 def test_selecting_net_worth_report_draws_a_bar_chart(qapp, dict_conn):
@@ -270,3 +292,157 @@ def test_reselecting_spending_report_resets_category_filter_to_all(qapp, dict_co
     _select_spending_report(pane)
 
     assert pane.category_table_view.model().rowCount() == 2
+
+
+def test_selecting_income_report_shows_table_and_hides_chart(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert pane.chart_view.isVisible()
+
+    _select_income_report(pane)
+    assert pane.category_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+
+
+def test_selecting_income_report_defaults_date_range_to_full_history(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_income_report(pane)
+    assert pane.start_date_edit.date().toPython() == date(2024, 3, 1)
+    assert pane.end_date_edit.date().toPython() == date(2024, 3, 15)
+    assert pane.range_label.text() == "Showing 2024-03-01 to 2024-03-15"
+
+
+def test_selecting_income_report_sorts_categories_by_income_descending(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_income_report(pane)
+
+    view = pane.category_table_view
+    assert view.model().rowCount() == 2
+    assert _table_cell(view, 0, 0) == "Salary"
+    assert _table_cell(view, 0, 1) == "1,200.00"
+    assert _table_cell(view, 1, 0) == "Freelance"
+    assert _table_cell(view, 1, 1) == "300.00"
+
+
+def test_updating_range_recomputes_income_table_for_narrower_window(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_income_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 3, 10))
+    pane.end_date_edit.setDate(QDate(2024, 3, 31))
+    pane.update_range_button.click()
+
+    assert pane.range_label.text() == "Showing 2024-03-10 to 2024-03-31"
+    view = pane.category_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 0) == "Freelance"
+    assert _table_cell(view, 0, 1) == "300.00"
+
+
+def test_income_report_defaults_to_table_view_with_selector_hidden_elsewhere(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert not pane.view_selector.isVisible()
+
+    _select_income_report(pane)
+    assert pane.view_selector.isVisible()
+    assert pane.view_selector.currentText() == "Table"
+    assert pane.category_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+
+
+def test_switching_income_report_to_pie_chart_shows_chart_and_hides_table(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_income_report(pane)
+
+    pane.view_selector.setCurrentText("Pie Chart")
+
+    assert pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    series = pane.chart_view.chart().series()[0]
+    assert len(series.slices()) == 2
+    assert series.slices()[0].label() == "Salary"
+
+
+def test_selecting_income_report_does_not_disturb_spending_table(qapp, dict_conn):
+    _add_income_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+    assert pane.category_table_view.model().rowCount() == 2
+
+    _select_income_report(pane)
+    assert pane.category_table_view.model().rowCount() == 2
+    assert _table_cell(pane.category_table_view, 0, 0) == "Salary"
+
+    _select_spending_report(pane)
+    assert _table_cell(pane.category_table_view, 0, 0) == "Utilities"
+
+
+class _FakeCategoryTransactionsDialog:
+    last_init_args = None
+
+    def __init__(self, category_name, transactions, parent=None):
+        _FakeCategoryTransactionsDialog.last_init_args = (category_name, transactions)
+
+    def exec(self):
+        return QDialog.Accepted
+
+
+def test_double_clicking_category_cell_opens_transactions_dialog(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab, "CategoryTransactionsDialog", _FakeCategoryTransactionsDialog
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.category_table_view.doubleClicked.emit(pane.category_table_view.model().index(1, 0))
+
+    category_name, transactions = _FakeCategoryTransactionsDialog.last_init_args
+    assert category_name == "Groceries"
+    assert [t[0] for t in transactions] == [1000, 1001]
+
+
+def test_double_clicking_amount_cell_does_not_open_transactions_dialog(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab, "CategoryTransactionsDialog", _FakeCategoryTransactionsDialog
+    )
+    _FakeCategoryTransactionsDialog.last_init_args = None
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    pane.category_table_view.doubleClicked.emit(pane.category_table_view.model().index(1, 1))
+
+    assert _FakeCategoryTransactionsDialog.last_init_args is None
+
+
+def test_category_table_context_menu_offers_show_transactions_for_spending_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+
+    labels = [label for label, _callback in pane._category_table_context_actions(1)]
+    assert labels == ["Show Transactions"]
+
+
+def test_show_transactions_action_opens_dialog_for_income_report(qapp, dict_conn, monkeypatch):
+    _add_income_transactions(dict_conn)
+    monkeypatch.setattr(
+        reports_tab, "CategoryTransactionsDialog", _FakeCategoryTransactionsDialog
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_income_report(pane)
+
+    _, callback = pane._category_table_context_actions(0)[0]
+    callback()
+
+    category_name, transactions = _FakeCategoryTransactionsDialog.last_init_args
+    assert category_name == "Salary"
+    assert [t[0] for t in transactions] == [2000]

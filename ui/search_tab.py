@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QDateEdit,
     QFormLayout,
     QHBoxLayout,
@@ -75,6 +76,9 @@ class SearchPane(QWidget):
         self.account_list = QListWidget()
         self.account_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
 
+        self.show_closed_checkbox = QCheckBox("Show only closed accounts")
+        self.show_closed_checkbox.stateChanged.connect(self._reload_accounts)
+
         self.search_button = QPushButton("Search")
         self.search_button.clicked.connect(self._on_search_clicked)
         self.clear_button = QPushButton("Clear")
@@ -109,6 +113,7 @@ class SearchPane(QWidget):
         filters_layout.addLayout(filters_form)
         filters_layout.addWidget(QLabel("Accounts:"))
         filters_layout.addWidget(self.account_list)
+        filters_layout.addWidget(self.show_closed_checkbox)
         filters_layout.addLayout(button_row)
 
         self.result_model = SearchResultTableModel()
@@ -139,15 +144,20 @@ class SearchPane(QWidget):
 
     def _reload_accounts(self):
         try:
-            accounts = data.list_accounts(self._conn, include_closed=True)
+            accounts = data.list_accounts(
+                self._conn, only_closed=self.show_closed_checkbox.isChecked()
+            )
         except Exception as exc:
             self._report_error(f"Failed to load accounts: {exc}")
             return
+        previously_selected = set(self._selected_account_ids())
         self.account_list.clear()
         for account_id, name, *_rest in accounts:
             item = QListWidgetItem(name)
             item.setData(Qt.UserRole, account_id)
             self.account_list.addItem(item)
+            if account_id in previously_selected:
+                item.setSelected(True)
 
     def _selected_account_ids(self):
         return [item.data(Qt.UserRole) for item in self.account_list.selectedItems()]

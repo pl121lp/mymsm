@@ -7,12 +7,14 @@ from models import (
     AccountTableModel,
     CategoryTransactionTableModel,
     DictionaryListModel,
+    IncomeByCategoryTableModel,
     SearchResultTableModel,
     SpendingByCategoryTableModel,
     TransactionTableModel,
     activity_label,
     build_loan_transaction_rows,
     compute_account_value_history,
+    compute_income_by_category,
     compute_loan_totals,
     compute_net_worth_series,
     compute_spending_by_category,
@@ -647,3 +649,63 @@ def test_spending_by_category_model_set_categories_replaces_contents():
     model.set_categories([("Utilities", Decimal("75.00"))])
     assert model.rowCount() == 1
     assert _data(model, 0, 0) == "Utilities"
+
+
+def test_compute_income_by_category_sorts_highest_income_first():
+    transactions = [
+        (10, "Salary", date(2024, 3, 1), Decimal("1200.00"), "USD"),
+        (20, "Freelance", date(2024, 3, 10), Decimal("300.00"), "USD"),
+        (20, "Freelance", date(2024, 3, 15), Decimal("200.00"), "USD"),
+    ]
+    result = compute_income_by_category(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Salary", Decimal("1200.00")),
+        ("Freelance", Decimal("500.00")),
+    ]
+
+
+def test_compute_income_by_category_ignores_negative_amounts():
+    transactions = [
+        (10, "Salary", date(2024, 3, 1), Decimal("1200.00"), "USD"),
+        (20, "Groceries", date(2024, 3, 5), Decimal("-30.00"), "USD"),
+    ]
+    result = compute_income_by_category(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [("Salary", Decimal("1200.00"))]
+
+
+def test_compute_income_by_category_filters_to_date_range():
+    transactions = [
+        (10, "Salary", date(2024, 1, 1), Decimal("1200.00"), "USD"),
+        (20, "Freelance", date(2024, 6, 1), Decimal("300.00"), "USD"),
+    ]
+    result = compute_income_by_category(
+        transactions, date(2024, 5, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [("Freelance", Decimal("300.00"))]
+
+
+def test_compute_income_by_category_converts_currency():
+    transactions = [(10, "Consulting", date(2024, 3, 1), Decimal("100.00"), "SEK")]
+    result = compute_income_by_category(
+        transactions,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        to_usd=lambda currency, amount: amount * Decimal("0.1"),
+    )
+    assert result == [("Consulting", Decimal("10.000"))]
+
+
+def test_compute_income_by_category_empty_transactions_returns_empty_list():
+    assert compute_income_by_category([], date(2024, 1, 1), date(2024, 12, 31), lambda c, a: a) == []
+
+
+def test_income_by_category_model_columns_are_category_and_income():
+    model = IncomeByCategoryTableModel([("Salary", Decimal("1200.00"))])
+    assert model.rowCount() == 1
+    assert model.columnCount() == 2
+    assert _data(model, 0, 0) == "Salary"
+    assert _data(model, 0, 1) == "1,200.00"
