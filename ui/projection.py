@@ -24,6 +24,13 @@ class ProjectionInputs:
     spending_after_retirement: Decimal
     social_security_annual_amount: Decimal
     social_security_start_year: int
+    house_sale_value: Decimal
+    house_sale_year: int
+    inheritance_amount: Decimal
+    inheritance_year: int
+    medical_cost_after_retirement: Decimal
+    medicare_age: int
+    withdrawal_tax_rate: Decimal
 
 
 class YearlyProjection(NamedTuple):
@@ -35,7 +42,6 @@ class YearlyProjection(NamedTuple):
     tax: Decimal
     spending: Decimal
     net_cash_flow: Decimal
-    investment_value: Decimal
     net_worth: Decimal
 
 
@@ -48,10 +54,20 @@ def compute_projection(
     no cash flow or growth applied yet. Each later year escalates income,
     Social Security, and spending by inflation_rate, stops income (but not
     Social Security) once retired, applies tax_rate to income + Social
-    Security only, and compounds both investment_value (market growth
-    alone) and net_worth (market growth plus that year's net cash flow) at
-    the before/after-retirement return rate. net_worth is never floored at
-    zero -- a shortfall keeps compounding as a negative balance.
+    Security only, and compounds net_worth (a single pool -- there is no
+    separate untouched "investment value") at the before/after-retirement
+    return rate on top of that year's net cash flow. net_worth is never
+    floored at zero -- a shortfall keeps compounding as a negative balance.
+
+    Medical costs (medical_cost_after_retirement, inflation-adjusted) are
+    added to retirement spending only while age < medicare_age.
+
+    In retired years where income + Social Security (after tax) doesn't
+    cover spending, the shortfall is funded by selling investments, and
+    that sale is itself taxed: the amount actually withdrawn is grossed up
+    by withdrawal_tax_rate so the after-tax proceeds cover the shortfall.
+    This does not apply before retirement, and does not apply to house-sale
+    or inheritance lump sums, which are added in full in their given year.
     """
     if current_year is None:
         current_year = date.today().year
@@ -70,7 +86,6 @@ def compute_projection(
             tax=zero,
             spending=zero,
             net_cash_flow=zero,
-            investment_value=inputs.starting_investment_value,
             net_worth=inputs.starting_investment_value,
         )
     ]
@@ -78,6 +93,7 @@ def compute_projection(
     for year in range(current_year + 1, inputs.end_year + 1):
         prior = rows[-1]
         years_elapsed = year - current_year
+        age = year - inputs.birth_year
         retired = year >= retirement_year
         inflation_factor = (one + inputs.inflation_rate) ** years_elapsed
 
@@ -87,29 +103,43 @@ def compute_projection(
             if year >= inputs.social_security_start_year
             else zero
         )
+        medical = (
+            inputs.medical_cost_after_retirement * inflation_factor
+            if retired and age < inputs.medicare_age
+            else zero
+        )
         spending = (
             inputs.spending_after_retirement if retired else inputs.spending_before_retirement
-        ) * inflation_factor
+        ) * inflation_factor + medical
         tax = (income + social_security) * inputs.tax_rate
-        net_cash_flow = income + social_security - tax - spending
+        pre_withdrawal_cash_flow = income + social_security - tax - spending
+
+        if retired and pre_withdrawal_cash_flow < zero:
+            shortfall = -pre_withdrawal_cash_flow
+            net_cash_flow = -(shortfall / (one - inputs.withdrawal_tax_rate))
+        else:
+            net_cash_flow = pre_withdrawal_cash_flow
+
+        if year == inputs.house_sale_year:
+            net_cash_flow += inputs.house_sale_value
+        if year == inputs.inheritance_year:
+            net_cash_flow += inputs.inheritance_amount
 
         return_rate = (
             inputs.return_rate_after_retirement if retired else inputs.return_rate_before_retirement
         )
-        investment_value = prior.investment_value * (one + return_rate)
         net_worth = (prior.net_worth + net_cash_flow) * (one + return_rate)
 
         rows.append(
             YearlyProjection(
                 year=year,
-                age=year - inputs.birth_year,
+                age=age,
                 retired=retired,
                 income=income,
                 social_security=social_security,
                 tax=tax,
                 spending=spending,
                 net_cash_flow=net_cash_flow,
-                investment_value=investment_value,
                 net_worth=net_worth,
             )
         )

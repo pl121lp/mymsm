@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QLabel,
     QListView,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSplitter,
     QTableView,
     QVBoxLayout,
@@ -26,7 +28,7 @@ import data
 from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
 from charts import build_bar_chart, build_line_chart, build_pie_chart
-from data import INVESTMENT_ACCOUNT_TYPE
+from data import ASSET_ACCOUNT_TYPE, INVESTMENT_ACCOUNT_TYPE
 from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
@@ -75,6 +77,7 @@ class ReportsPane(QWidget):
         self._selected_categories = None
         self._investment_prices = []
         self._selected_investments = None
+        self._projection_asset_values = {}
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -113,8 +116,19 @@ class ReportsPane(QWidget):
         self.investment_controls_row.setVisible(False)
 
         self.projection_controls = ProjectionControlsPanel()
-        self.projection_controls.setVisible(False)
         self.projection_controls.updated.connect(self._on_projection_updated)
+
+        # Wrapped in a scroll area so the (tall) controls panel scrolls
+        # internally instead of pushing the chart down; Ignored vertical size
+        # policy means the layout allocates space by stretch factor below,
+        # not by this scroll area's content sizeHint.
+        self.projection_controls_scroll_area = QScrollArea()
+        self.projection_controls_scroll_area.setWidgetResizable(True)
+        self.projection_controls_scroll_area.setWidget(self.projection_controls)
+        self.projection_controls_scroll_area.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Ignored
+        )
+        self.projection_controls_scroll_area.setVisible(False)
 
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
@@ -167,12 +181,12 @@ class ReportsPane(QWidget):
         chart_panel = QWidget()
         chart_layout = QVBoxLayout(chart_panel)
         chart_layout.setContentsMargins(0, 0, 0, 0)
-        chart_layout.addWidget(self.chart_view)
+        chart_layout.addWidget(self.chart_view, 1)
         chart_layout.addWidget(self.category_table_view)
         chart_layout.addWidget(self.investment_table_view)
         chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
-        chart_layout.addWidget(self.projection_controls)
+        chart_layout.addWidget(self.projection_controls_scroll_area, 1)
         chart_layout.addWidget(self.range_label)
         chart_layout.addWidget(self.range_controls_row)
 
@@ -196,7 +210,7 @@ class ReportsPane(QWidget):
             self.range_label.setText("")
             self.view_selector_row.setVisible(False)
             self.investment_controls_row.setVisible(False)
-            self.projection_controls.setVisible(False)
+            self.projection_controls_scroll_area.setVisible(False)
             return
         report_id = self.list_model.id_at(indexes[0].row())
         self._active_report_id = report_id
@@ -213,7 +227,7 @@ class ReportsPane(QWidget):
         self.category_table_view.setVisible(is_category_report)
         self.investment_table_view.setVisible(is_investment_report)
         self.investment_controls_row.setVisible(is_investment_report)
-        self.projection_controls.setVisible(is_projection_report)
+        self.projection_controls_scroll_area.setVisible(is_projection_report)
         self.range_controls_row.setVisible(not is_projection_report)
         self.range_label.setVisible(not is_projection_report)
         if report_id == NET_WORTH_REPORT_ID:
@@ -403,6 +417,18 @@ class ReportsPane(QWidget):
             start=Decimal("0"),
         )
 
+        asset_accounts = [
+            (account_id, name)
+            for account_id, name, account_type, _currency, _balance, _is_closed in accounts
+            if account_type == ASSET_ACCOUNT_TYPE
+        ]
+        self._projection_asset_values = {
+            account_id: self._to_usd(currency, balance)
+            for account_id, name, account_type, currency, balance, _is_closed in accounts
+            if account_type == ASSET_ACCOUNT_TYPE
+        }
+        self.projection_controls.set_house_accounts(asset_accounts)
+
         values = default_projection_values()
         values.update(load_projection_settings())
         values["starting_investment_value"] = float(starting_value)
@@ -419,6 +445,9 @@ class ReportsPane(QWidget):
     def _render_projection_chart(self):
         values = self.projection_controls.values()
         hundred = Decimal("100")
+        house_sale_value = self._projection_asset_values.get(
+            values["house_account_id"], Decimal("0")
+        )
         inputs = ProjectionInputs(
             birth_year=values["birth_year"],
             end_year=values["end_year"],
@@ -433,13 +462,17 @@ class ReportsPane(QWidget):
             spending_after_retirement=Decimal(str(values["spending_after_retirement"])),
             social_security_annual_amount=Decimal(str(values["social_security_annual_amount"])),
             social_security_start_year=values["social_security_start_year"],
+            house_sale_value=house_sale_value,
+            house_sale_year=values["house_sale_year"],
+            inheritance_amount=Decimal(str(values["inheritance_amount"])),
+            inheritance_year=values["inheritance_year"],
+            medical_cost_after_retirement=Decimal(str(values["medical_cost_after_retirement"])),
+            medicare_age=values["medicare_age"],
+            withdrawal_tax_rate=Decimal(str(values["withdrawal_tax_rate"])) / hundred,
         )
         rows = compute_projection(inputs)
-        series = [
-            ("Investment Value", [(date(row.year, 1, 1), row.investment_value) for row in rows]),
-            ("Net Worth", [(date(row.year, 1, 1), row.net_worth) for row in rows]),
-        ]
-        chart = build_line_chart("Net Worth Projection (USD)", series)
+        series = [("Net Worth", [(date(row.year, 1, 1), row.net_worth) for row in rows])]
+        chart = build_line_chart("Net Worth Projection (USD)", series, mark_zero=True)
         self.chart_view.setChart(chart)
 
     def _on_custom_investments_clicked(self):

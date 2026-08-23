@@ -15,11 +15,14 @@ from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import QToolTip
 
 
-def build_line_chart(title, series):
+def build_line_chart(title, series, mark_zero=False):
     """Build a multi-series date/value line chart.
 
     series is an iterable of (label, points) pairs, where points is a list
-    of (date, value) tuples.
+    of (date, value) tuples. When mark_zero is True, the y-axis range is
+    extended to include 0 and a dashed reference line is drawn at y=0 (kept
+    out of the legend) so a chart that can go negative always shows where
+    zero is -- used for the net worth projection, which can dip negative.
     """
     chart = QChart()
     chart.setTitle(title)
@@ -52,12 +55,29 @@ def build_line_chart(title, series):
         line_series.attachAxis(axis_y)
 
     if x_min is not None:
+        if mark_zero:
+            y_min = min(y_min, 0.0)
+            y_max = max(y_max, 0.0)
         if y_min == y_max:
             y_min, y_max = y_min - 1, y_max + 1
         axis_x.setRange(
             QDateTime.fromMSecsSinceEpoch(x_min), QDateTime.fromMSecsSinceEpoch(x_max)
         )
         axis_y.setRange(y_min, y_max)
+        if mark_zero:
+            zero_series = QLineSeries()
+            zero_series.append(x_min, 0.0)
+            zero_series.append(x_max, 0.0)
+            pen = zero_series.pen()
+            pen.setStyle(Qt.DashLine)
+            pen.setColor(Qt.gray)
+            zero_series.setPen(pen)
+            chart.addSeries(zero_series)
+            zero_series.attachAxis(axis_x)
+            zero_series.attachAxis(axis_y)
+            markers = chart.legend().markers(zero_series)
+            if markers:
+                markers[0].setVisible(False)
     return chart
 
 

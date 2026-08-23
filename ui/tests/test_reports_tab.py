@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 from PySide6.QtCore import QDate, QItemSelectionModel, Qt
-from PySide6.QtWidgets import QDialog
+from PySide6.QtWidgets import QDialog, QScrollArea, QSizePolicy
 
 import reports_tab
 from projection_settings import (
@@ -693,6 +693,36 @@ def test_selecting_projection_report_shows_controls_and_chart_hides_others(qapp,
     assert not pane.range_label.isVisible()
 
 
+def test_projection_controls_are_hosted_in_a_scroll_area(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    assert isinstance(pane.projection_controls_scroll_area, QScrollArea)
+    assert pane.projection_controls_scroll_area.widget() is pane.projection_controls
+    assert pane.projection_controls_scroll_area.widgetResizable() is True
+
+
+def test_chart_and_projection_scroll_area_share_the_layout_equally(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    layout = pane.chart_view.parentWidget().layout()
+    chart_stretch = layout.stretch(layout.indexOf(pane.chart_view))
+    scroll_stretch = layout.stretch(layout.indexOf(pane.projection_controls_scroll_area))
+
+    assert chart_stretch == scroll_stretch == 1
+    assert pane.projection_controls_scroll_area.sizePolicy().verticalPolicy() == QSizePolicy.Ignored
+
+
+def test_selecting_projection_report_shows_scroll_area_and_hides_on_switch(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+
+    _select_projection_report(pane)
+    assert pane.projection_controls_scroll_area.isVisible()
+
+    _select_net_worth_report(pane)
+    assert not pane.projection_controls_scroll_area.isVisible()
+
+
 def test_selecting_other_report_after_projection_restores_range_controls(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     pane.show()
@@ -725,7 +755,7 @@ def test_selecting_projection_report_loads_persisted_settings(qapp, dict_conn, m
     assert pane.projection_controls.annual_income_spinbox.value() == pytest.approx(12345.0)
 
 
-def test_selecting_projection_report_renders_two_line_series(qapp, dict_conn, monkeypatch):
+def test_selecting_projection_report_renders_a_net_worth_line_series(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
@@ -733,10 +763,43 @@ def test_selecting_projection_report_renders_two_line_series(qapp, dict_conn, mo
 
     chart = pane.chart_view.chart()
     series = chart.series()
-    assert [s.name() for s in series] == ["Investment Value", "Net Worth"]
-    assert series[0].count() == series[1].count() > 1
-    assert series[0].at(0).y() == pytest.approx(426.30)
-    assert series[1].at(0).y() == pytest.approx(426.30)
+    assert [s.name() for s in series if s.name()] == ["Net Worth"]
+    net_worth_series = series[0]
+    assert net_worth_series.count() > 1
+    assert net_worth_series.at(0).y() == pytest.approx(426.30)
+
+
+def test_selecting_projection_report_populates_house_account_choices(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_projection_report(pane)
+
+    combo = pane.projection_controls.house_account_combo
+    assert [combo.itemText(i) for i in range(combo.count())] == ["None", "House"]
+
+
+def test_selecting_house_account_adds_its_value_in_the_sale_year(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.house_account_combo.setCurrentIndex(1)
+    controls.house_sale_year_spinbox.setValue(date.today().year + 1)
+    controls.update_button.click()
+
+    series = pane.chart_view.chart().series()[0]
+    assert series.at(1).y() == pytest.approx(series.at(0).y() + 300000.00)
 
 
 def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
@@ -755,6 +818,7 @@ def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, 
 
 def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatch, tmp_path):
     settings_path = tmp_path / "projection_settings.json"
+    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
     monkeypatch.setattr(
         reports_tab, "load_projection_settings",
         functools.partial(_real_load_projection_settings, path=settings_path),
@@ -767,6 +831,7 @@ def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatc
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
     pane.projection_controls.retirement_age_spinbox.setValue(70)
+    pane.projection_controls.house_account_combo.setCurrentIndex(1)
     pane.projection_controls.update_button.click()
 
     pane2 = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
@@ -777,3 +842,4 @@ def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatc
     _select_projection_report(pane2)
 
     assert pane2.projection_controls.retirement_age_spinbox.value() == 70
+    assert pane2.projection_controls.house_account_combo.currentData() == 5

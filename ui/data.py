@@ -8,6 +8,7 @@ import duckdb
 # are shown in the transaction table but don't affect the computed value yet.
 INVESTMENT_ACCOUNT_TYPE = "5"
 LOAN_ACCOUNT_TYPE = "6"
+ASSET_ACCOUNT_TYPE = "3"
 BUY_ACTIVITY = "1"
 SELL_ACTIVITY = "2"
 
