@@ -1,5 +1,6 @@
 from datetime import date
 
+import pytest
 from PySide6.QtCore import QDate, QItemSelectionModel, Qt
 from PySide6.QtWidgets import QDialog
 
@@ -659,3 +660,89 @@ def test_selecting_investment_report_does_not_disturb_spending_table(qapp, dict_
 
     _select_spending_report(pane)
     assert _table_cell(pane.category_table_view, 0, 0) == "Utilities"
+
+
+def _select_projection_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(4, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def test_reports_list_shows_net_worth_projection_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.rowCount() == len(REPORTS)
+    assert pane.list_model.data(pane.list_model.index(4, 0)) == "Net Worth Projection"
+
+
+def test_selecting_projection_report_shows_controls_and_chart_hides_others(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    assert pane.projection_controls.isVisible()
+    assert pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    assert not pane.investment_table_view.isVisible()
+    assert not pane.investment_controls_row.isVisible()
+    assert not pane.range_controls_row.isVisible()
+    assert not pane.range_label.isVisible()
+
+
+def test_selecting_other_report_after_projection_restores_range_controls(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+    _select_net_worth_report(pane)
+
+    assert not pane.projection_controls.isVisible()
+    assert pane.range_controls_row.isVisible()
+    assert pane.range_label.isVisible()
+
+
+def test_selecting_projection_report_autofills_starting_investment_value(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_projection_report(pane)
+
+    assert pane.projection_controls.starting_investment_value_spinbox.value() == pytest.approx(426.30)
+
+
+def test_selecting_projection_report_loads_persisted_settings(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab, "load_projection_settings", lambda: {"retirement_age": 70, "annual_income": 12345.0}
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_projection_report(pane)
+
+    assert pane.projection_controls.retirement_age_spinbox.value() == 70
+    assert pane.projection_controls.annual_income_spinbox.value() == pytest.approx(12345.0)
+
+
+def test_selecting_projection_report_renders_two_line_series(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_projection_report(pane)
+
+    chart = pane.chart_view.chart()
+    series = chart.series()
+    assert [s.name() for s in series] == ["Investment Value", "Net Worth"]
+    assert series[0].count() == series[1].count() > 1
+    assert series[0].at(0).y() == pytest.approx(426.30)
+    assert series[1].at(0).y() == pytest.approx(426.30)
+
+
+def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    saved = {}
+    monkeypatch.setattr(reports_tab, "save_projection_settings", saved.update)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    pane.projection_controls.retirement_age_spinbox.setValue(70)
+    pane.projection_controls.update_button.click()
+
+    assert saved["retirement_age"] == 70
+    assert "starting_investment_value" not in saved

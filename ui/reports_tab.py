@@ -1,5 +1,6 @@
 """Reports tab: browse canned reports, e.g. net worth over time."""
 
+from datetime import date
 from decimal import Decimal
 from functools import partial
 
@@ -24,7 +25,7 @@ from PySide6.QtCharts import QChart, QChartView
 import data
 from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
-from charts import build_bar_chart, build_pie_chart
+from charts import build_bar_chart, build_line_chart, build_pie_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from models import (
     DictionaryListModel,
@@ -38,17 +39,22 @@ from models import (
     compute_spending_by_category,
     generate_sample_dates,
 )
+from projection import ProjectionInputs, compute_projection
+from projection_controls import ProjectionControlsPanel, default_projection_values
+from projection_settings import load_projection_settings, save_projection_settings
 from table_copy import enable_cell_copy
 
 NET_WORTH_REPORT_ID = "net_worth_over_time"
 SPENDING_BY_CATEGORY_REPORT_ID = "spending_by_category"
 INCOME_BY_CATEGORY_REPORT_ID = "income_by_category"
 INVESTMENT_ANALYSIS_REPORT_ID = "investment_analysis"
+NET_WORTH_PROJECTION_REPORT_ID = "net_worth_projection"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
     (INCOME_BY_CATEGORY_REPORT_ID, "Income by category"),
     (INVESTMENT_ANALYSIS_REPORT_ID, "Investment analysis"),
+    (NET_WORTH_PROJECTION_REPORT_ID, "Net Worth Projection"),
 ]
 
 
@@ -106,6 +112,10 @@ class ReportsPane(QWidget):
         investment_controls_layout.addStretch()
         self.investment_controls_row.setVisible(False)
 
+        self.projection_controls = ProjectionControlsPanel()
+        self.projection_controls.setVisible(False)
+        self.projection_controls.updated.connect(self._on_projection_updated)
+
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
                 "compute": compute_spending_by_category,
@@ -151,6 +161,8 @@ class ReportsPane(QWidget):
         range_row.addWidget(self.end_date_edit)
         range_row.addWidget(self.update_range_button)
         range_row.addStretch()
+        self.range_controls_row = QWidget()
+        self.range_controls_row.setLayout(range_row)
 
         chart_panel = QWidget()
         chart_layout = QVBoxLayout(chart_panel)
@@ -160,8 +172,9 @@ class ReportsPane(QWidget):
         chart_layout.addWidget(self.investment_table_view)
         chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
+        chart_layout.addWidget(self.projection_controls)
         chart_layout.addWidget(self.range_label)
-        chart_layout.addLayout(range_row)
+        chart_layout.addWidget(self.range_controls_row)
 
         splitter = QSplitter(Qt.Horizontal)
         splitter.addWidget(self.list_view)
@@ -183,27 +196,34 @@ class ReportsPane(QWidget):
             self.range_label.setText("")
             self.view_selector_row.setVisible(False)
             self.investment_controls_row.setVisible(False)
+            self.projection_controls.setVisible(False)
             return
         report_id = self.list_model.id_at(indexes[0].row())
         self._active_report_id = report_id
         is_category_report = report_id in self._category_reports
         is_investment_report = report_id == INVESTMENT_ANALYSIS_REPORT_ID
+        is_projection_report = report_id == NET_WORTH_PROJECTION_REPORT_ID
         self.view_selector_row.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
             self.view_selector.setCurrentIndex(0)
             self.view_selector.blockSignals(False)
             self.category_table_view.setModel(self._category_reports[report_id]["model"])
-        self.chart_view.setVisible(report_id == NET_WORTH_REPORT_ID)
+        self.chart_view.setVisible(report_id in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID))
         self.category_table_view.setVisible(is_category_report)
         self.investment_table_view.setVisible(is_investment_report)
         self.investment_controls_row.setVisible(is_investment_report)
+        self.projection_controls.setVisible(is_projection_report)
+        self.range_controls_row.setVisible(not is_projection_report)
+        self.range_label.setVisible(not is_projection_report)
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
         elif is_category_report:
             self._load_category_report(report_id)
         elif is_investment_report:
             self._load_investment_report()
+        elif is_projection_report:
+            self._load_projection_report()
 
     def _on_view_mode_changed(self):
         if self._active_report_id not in self._category_reports:
@@ -366,6 +386,61 @@ class ReportsPane(QWidget):
             investments = [row for row in investments if row[0] in self._selected_investments]
         self.investment_table_model.set_investments(investments)
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+
+    def _load_projection_report(self):
+        try:
+            accounts = data.list_accounts(self._conn, include_closed=False)
+        except Exception as exc:
+            self._report_error(f"Failed to load net worth projection report: {exc}")
+            return
+
+        starting_value = sum(
+            (
+                self._to_usd(currency, balance)
+                for _account_id, _name, account_type, currency, balance, _is_closed in accounts
+                if account_type == INVESTMENT_ACCOUNT_TYPE
+            ),
+            start=Decimal("0"),
+        )
+
+        values = default_projection_values()
+        values.update(load_projection_settings())
+        values["starting_investment_value"] = float(starting_value)
+        self.projection_controls.set_values(values)
+        self._render_projection_chart()
+
+    def _on_projection_updated(self):
+        values = self.projection_controls.values()
+        save_projection_settings(
+            {key: value for key, value in values.items() if key != "starting_investment_value"}
+        )
+        self._render_projection_chart()
+
+    def _render_projection_chart(self):
+        values = self.projection_controls.values()
+        hundred = Decimal("100")
+        inputs = ProjectionInputs(
+            birth_year=values["birth_year"],
+            end_year=values["end_year"],
+            retirement_age=values["retirement_age"],
+            starting_investment_value=Decimal(str(values["starting_investment_value"])),
+            return_rate_before_retirement=Decimal(str(values["return_rate_before_retirement"])) / hundred,
+            return_rate_after_retirement=Decimal(str(values["return_rate_after_retirement"])) / hundred,
+            annual_income=Decimal(str(values["annual_income"])),
+            tax_rate=Decimal(str(values["tax_rate"])) / hundred,
+            inflation_rate=Decimal(str(values["inflation_rate"])) / hundred,
+            spending_before_retirement=Decimal(str(values["spending_before_retirement"])),
+            spending_after_retirement=Decimal(str(values["spending_after_retirement"])),
+            social_security_annual_amount=Decimal(str(values["social_security_annual_amount"])),
+            social_security_start_year=values["social_security_start_year"],
+        )
+        rows = compute_projection(inputs)
+        series = [
+            ("Investment Value", [(date(row.year, 1, 1), row.investment_value) for row in rows]),
+            ("Net Worth", [(date(row.year, 1, 1), row.net_worth) for row in rows]),
+        ]
+        chart = build_line_chart("Net Worth Projection (USD)", series)
+        self.chart_view.setChart(chart)
 
     def _on_custom_investments_clicked(self):
         all_names = sorted({name for name, _txn_date, _price in self._investment_prices})
