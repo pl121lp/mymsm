@@ -3,6 +3,7 @@
 data/raw/
 money.duckdb
 payee_aliases.json
+projection_settings.json
 .venv/
 extract-mny/target/
 __pycache__/
