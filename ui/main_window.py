@@ -37,7 +37,6 @@ from data import INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
 from exchange_rate import FRANKFURTER_URL, parse_rate_response
 from import_qfx_dialog import ImportQfxDialog
-from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 from models import (
     AccountTableModel,
     TransactionTableModel,
@@ -52,6 +51,7 @@ from qfx_import import parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
+from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 
 SETTINGS_ORG = "mymsm"
 SETTINGS_APP = "MoneyBrowser"
@@ -449,6 +449,7 @@ class MainWindow(QMainWindow):
         if reply != QMessageBox.Yes:
             return
         writes.delete_account(self._conn, account_id)
+        self._undo_stack = UndoStack()
         self._refresh_after_write()
         self.statusBar().showMessage(f"Account '{name}' deleted.")
 

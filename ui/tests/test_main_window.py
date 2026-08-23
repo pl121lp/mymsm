@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QKeySequence, QMouseEvent, QShortcut
+from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
 from main_window import SETTINGS_KEY_SEK_RATE, MainWindow
@@ -437,6 +437,43 @@ def test_delete_account_confirmation_mentions_transaction_count(qapp, conn, monk
     window._on_delete_account_clicked(closed_row)
 
     assert "2" in seen_messages[0]
+
+
+def test_delete_account_clears_undo_stack_for_its_own_transactions(qapp, conn, monkeypatch):
+    # Queue an undo command for a transaction that belongs to the account
+    # being deleted, then delete the whole account. Account deletion removes
+    # all of its transactions, so the queued command would otherwise become
+    # stale: DeleteCommand.undo would raise on the missing row, and
+    # AddCommand/EditCommand/ImportCommand.undo would silently no-op while
+    # still reporting success. Deleting the account must clear the stack.
+    import add_record_dialog
+    import writes
+    from datetime import date
+    from decimal import Decimal
+
+    def fake_exec(self):
+        self.transaction_id = writes.add_transaction(
+            self._conn, self._account_id, date(2024, 4, 1), Decimal("-5.00"),
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    window._on_add_record_button_clicked()
+    assert bool(window._undo_stack) is True
+
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+    checking_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[1] == "Checking"
+    )
+    window._on_delete_account_clicked(checking_row)
+
+    window._on_undo()
+
+    assert window.statusBar().currentMessage() == "Nothing to undo."
 
 
 def test_header_controls_disabled_when_no_account_selected(qapp, conn):
@@ -1093,9 +1130,31 @@ def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
     assert window.statusBar().currentMessage() == "Undone: Import 2 record(s)"
 
 
-def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
+def test_ctrl_z_shows_failure_message_and_drops_failed_command(qapp, conn):
+    class _FailingCommand:
+        description = "Fail"
+
+        def undo(self, conn):
+            raise RuntimeError("boom")
+
     window = MainWindow(conn)
-    shortcuts = [
-        sc for sc in window.findChildren(QShortcut) if sc.key() == QKeySequence("Ctrl+Z")
-    ]
-    assert len(shortcuts) == 1
+    window._undo_stack.push(_FailingCommand())
+
+    window._on_undo()
+
+    assert window.statusBar().currentMessage().startswith("Failed to undo:")
+    assert not window._undo_stack
+
+
+def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
+    from PySide6.QtCore import Qt
+    from PySide6.QtTest import QTest
+
+    window = MainWindow(conn)
+    window.show()
+    QTest.qWaitForWindowExposed(window)
+
+    QTest.keyClick(window, Qt.Key_Z, Qt.ControlModifier)
+
+    assert window.statusBar().currentMessage() == "Nothing to undo."
+    window.close()
