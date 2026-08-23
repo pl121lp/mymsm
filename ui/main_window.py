@@ -5,7 +5,7 @@ from functools import partial
 
 from PySide6.QtCharts import QChartView
 from PySide6.QtCore import QEvent, QSettings, Qt, QUrl
-from PySide6.QtGui import QPainter
+from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -37,6 +37,7 @@ from data import INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
 from exchange_rate import FRANKFURTER_URL, parse_rate_response
 from import_qfx_dialog import ImportQfxDialog
+from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 from models import (
     AccountTableModel,
     TransactionTableModel,
@@ -74,6 +75,8 @@ class MainWindow(QMainWindow):
         self._history = NavigationHistory()
         self._current_view = None
         self._navigating_back = False
+        self._undo_stack = UndoStack()
+        QShortcut(QKeySequence("Ctrl+Z"), self, activated=self._on_undo)
         QApplication.instance().installEventFilter(self)
 
         self.account_model = AccountTableModel()
@@ -335,6 +338,19 @@ class MainWindow(QMainWindow):
         self.payees_pane._reload()
         self.investments_pane._reload()
 
+    def _on_undo(self):
+        command = self._undo_stack.pop()
+        if command is None:
+            self.statusBar().showMessage("Nothing to undo.")
+            return
+        try:
+            command.undo(self._conn)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to undo: {exc}")
+            return
+        self._refresh_after_write()
+        self.statusBar().showMessage(f"Undone: {command.description}")
+
     def _on_add_record_button_clicked(self):
         indexes = self.account_view.selectionModel().selectedRows()
         if not indexes:
@@ -346,6 +362,7 @@ class MainWindow(QMainWindow):
         dialog = AddRecordDialog(self._conn, account_id, account_type, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
             return
+        self._undo_stack.push(AddCommand(dialog.transaction_id))
         self._refresh_after_write()
         self.account_view.selectRow(row)
         self._on_account_selected()
@@ -382,6 +399,8 @@ class MainWindow(QMainWindow):
         )
         if dialog.exec() != ImportQfxDialog.Accepted:
             return
+        if dialog.imported_transaction_ids:
+            self._undo_stack.push(ImportCommand(dialog.imported_transaction_ids))
         self._refresh_after_write()
         self.statusBar().showMessage(f"Imported {dialog.imported_count} transaction(s).")
 
@@ -450,9 +469,11 @@ class MainWindow(QMainWindow):
                 "Interest records are derived from another account and can't be edited here."
             )
             return
+        before_row = data.get_transaction_row(self._conn, transaction[0])
         dialog = AddRecordDialog(self._conn, account_id, account_type, transaction=transaction, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
             return
+        self._undo_stack.push(EditCommand(before_row))
         self._refresh_after_write()
         self.account_view.selectRow(account_row)
         self._on_account_selected()
@@ -472,13 +493,15 @@ class MainWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Delete Record",
-            "Permanently delete this record? This cannot be undone.",
+            "Permanently delete this record? Press Ctrl+Z afterward to undo.",
             QMessageBox.Yes | QMessageBox.No,
             QMessageBox.No,
         )
         if reply != QMessageBox.Yes:
             return
+        before_row = data.get_transaction_row(self._conn, transaction_id)
         writes.delete_transaction(self._conn, transaction_id)
+        self._undo_stack.push(DeleteCommand(before_row))
         self._refresh_after_write()
         self.account_view.selectRow(account_row)
         self._on_account_selected()

@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 from PySide6.QtCore import QEvent, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
+from PySide6.QtGui import QKeySequence, QMouseEvent, QShortcut
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
 from main_window import SETTINGS_KEY_SEK_RATE, MainWindow
@@ -973,3 +973,129 @@ def test_apply_rate_response_keeps_cached_value_on_bad_body(qapp, conn):
 
     assert window.sek_rate_spinbox.value() == pytest.approx(0.2)
     assert "saved value" in window.statusBar().currentMessage()
+
+
+def test_undo_with_nothing_to_undo_shows_status_message(qapp, conn):
+    window = MainWindow(conn)
+    window._on_undo()
+    assert window.statusBar().currentMessage() == "Nothing to undo."
+
+
+def test_ctrl_z_undoes_an_add(qapp, conn, monkeypatch):
+    import add_record_dialog
+    import writes
+    from datetime import date
+    from decimal import Decimal
+
+    def fake_exec(self):
+        self.transaction_id = writes.add_transaction(
+            self._conn, self._account_id, date(2024, 4, 1), Decimal("-5.00"),
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (cash account, see conn fixture ordering)
+    window._on_add_record_button_clicked()
+    new_id = window.transaction_model.transaction_at(0)[0]
+
+    window._on_undo()
+
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = ?", [new_id]
+    ).fetchone()
+    assert row is None
+    assert window.statusBar().currentMessage() == "Undone: Add record"
+
+
+def test_ctrl_z_undoes_an_edit(qapp, conn, monkeypatch):
+    import add_record_dialog
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    original_memo = conn.execute(
+        "SELECT memo FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()[0]
+
+    window._on_transaction_double_clicked(window.transaction_model.index(0, 0))
+    conn.execute("UPDATE transactions SET memo = 'clobbered' WHERE transaction_id = 1000")
+
+    window._on_undo()
+
+    memo = conn.execute("SELECT memo FROM transactions WHERE transaction_id = 1000").fetchone()[0]
+    assert memo == original_memo
+    assert window.statusBar().currentMessage() == "Undone: Edit record"
+
+
+def test_ctrl_z_undoes_a_delete(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    transaction_id = window.transaction_model.transaction_at(0)[0]
+
+    window._on_delete_record_clicked(0)
+    window._on_undo()
+
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = ?", [transaction_id]
+    ).fetchone()
+    assert row is not None
+    assert window.statusBar().currentMessage() == "Undone: Delete record"
+
+
+def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    def fake_exec(self):
+        self.imported_transaction_ids = [9001, 9002]
+        self.imported_count = 2
+        conn.execute(
+            "INSERT INTO transactions VALUES "
+            "(9001, 1, NULL, NULL, '2024-05-01', -1.00, NULL, NULL, NULL, NULL, NULL, NULL), "
+            "(9002, 1, NULL, NULL, '2024-05-02', -2.00, NULL, NULL, NULL, NULL, NULL, NULL)"
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", fake_exec)
+    # ImportQfxDialog.__init__ builds its preview tables from these records
+    # before exec() is ever called, so a bare object() would blow up on
+    # attribute access; contents are otherwise unused by fake_exec.
+    fake_record = QfxRecord(
+        trn_type="DEBIT",
+        txn_date=date(2024, 5, 1),
+        amount=Decimal("-1.00"),
+        fitid="FAKE1",
+        name="Fake Payee",
+        memo="",
+        checknum="",
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
+    )
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+
+    window._on_import_button_clicked()
+    window._on_undo()
+
+    rows = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id IN (9001, 9002)"
+    ).fetchall()
+    assert rows == []
+    assert window.statusBar().currentMessage() == "Undone: Import 2 record(s)"
+
+
+def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
+    window = MainWindow(conn)
+    shortcuts = [
+        sc for sc in window.findChildren(QShortcut) if sc.key() == QKeySequence("Ctrl+Z")
+    ]
+    assert len(shortcuts) == 1
