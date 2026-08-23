@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from data import (
     count_transactions_by_payee,
+    get_transaction_row,
     list_accounts,
     list_categories,
     list_category_spending,
@@ -84,6 +85,18 @@ def test_list_transactions_resolves_investment_fields(conn):
 
 def test_list_transactions_unknown_account_returns_empty(conn):
     assert list_transactions(conn, account_id=999) == []
+
+
+def test_get_transaction_row_returns_all_raw_columns(conn):
+    row = get_transaction_row(conn, transaction_id=1000)
+    assert row == (
+        1000, 1, 10, 100, date(2024, 3, 15), Decimal("-52.30"), "weekly shop",
+        None, None, None, None, None,
+    )
+
+
+def test_get_transaction_row_returns_none_for_unknown_id(conn):
+    assert get_transaction_row(conn, transaction_id=999999) is None
 
 
 def test_list_loan_interest_payments_matches_interest_leg_by_payee_and_date(loan_conn):

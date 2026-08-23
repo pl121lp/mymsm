@@ -97,6 +97,18 @@ def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[
     return conn.execute(query, [account_id]).fetchall()
 
 
+def get_transaction_row(conn: duckdb.DuckDBPyConnection, transaction_id: int) -> tuple | None:
+    """Raw (unjoined) transaction row, ids not names — a snapshot used by
+    ui/undo.py to reverse an edit or delete. Column order matches the
+    transactions table exactly (see etl/schema.py)."""
+    return conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = ?",
+        [transaction_id],
+    ).fetchone()
+
+
 def list_loan_interest_payments(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[tuple]:
     """Reconstructed interest payments for a loan account, as
     (txn_date, payee, amount, currency) — currency is the *paying* account's,
