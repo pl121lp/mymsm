@@ -63,6 +63,7 @@ class ImportQfxDialog(QDialog):
         self._conn = conn
         self._records = records
         self.imported_count = 0
+        self.imported_transaction_ids = []
 
         self.setWindowTitle("Import QFX")
 
@@ -177,10 +178,11 @@ class ImportQfxDialog(QDialog):
     def _on_apply(self):
         account_id = self.account_combo.currentData()
         try:
-            self.imported_count = writes.import_transactions(
+            self.imported_transaction_ids = writes.import_transactions(
                 self._conn, account_id, self._to_import
             )
         except Exception as exc:
             self.error_label.setText(f"Failed to import records: {exc}")
             return
+        self.imported_count = len(self.imported_transaction_ids)
         self.accept()

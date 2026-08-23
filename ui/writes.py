@@ -68,6 +68,49 @@ def delete_transaction(conn, transaction_id):
     conn.execute("DELETE FROM transactions WHERE transaction_id = ?", [transaction_id])
 
 
+def restore_transaction(conn, row):
+    """Re-inserts a previously-deleted transaction row exactly as captured
+    by data.get_transaction_row, preserving its original transaction_id
+    and dictionary ids (category_id/payee_id/security_id). Used only to
+    undo delete_transaction — see ui/undo.py."""
+    conn.execute(
+        "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", list(row)
+    )
+
+
+def restore_transaction_fields(conn, row):
+    """Restores the mutable fields of an existing transaction (everything
+    update_transaction can change) to a previously captured snapshot, by
+    raw id rather than by name — no dictionary lookup or auto-create.
+    Used only to undo update_transaction — see ui/undo.py."""
+    (
+        transaction_id, _account_id, category_id, payee_id, txn_date, amount, memo,
+        security_id, activity, quantity, price, _linked_account_id,
+    ) = row
+    conn.execute(
+        "UPDATE transactions SET category_id = ?, payee_id = ?, txn_date = ?, amount = ?, "
+        "memo = ?, security_id = ?, activity = ?, quantity = ?, price = ? "
+        "WHERE transaction_id = ?",
+        [category_id, payee_id, txn_date, amount, memo, security_id, activity, quantity, price, transaction_id],
+    )
+
+
+def delete_transactions(conn, transaction_ids):
+    """Permanently deletes multiple transaction rows in one transaction —
+    all-or-nothing, like import_transactions' insert side. Used only to
+    undo import_transactions — see ui/undo.py."""
+    if not transaction_ids:
+        return
+    conn.begin()
+    try:
+        for transaction_id in transaction_ids:
+            conn.execute("DELETE FROM transactions WHERE transaction_id = ?", [transaction_id])
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
 def add_transaction(
     conn,
     account_id,
@@ -118,12 +161,13 @@ def import_transactions(conn, account_id, records):
     (payee = record.name, memo = record.memo), auto-creating any payee that
     doesn't already exist by name (case-insensitive). The whole batch commits
     as one transaction, so a bad row can't leave the account half-imported.
-    Returns the number of rows inserted."""
+    Returns the list of new transaction_ids, in insertion order."""
     if not records:
-        return 0
+        return []
     conn.begin()
     try:
         transaction_id = _next_id(conn, "transactions", "transaction_id")
+        transaction_ids = []
         for record in records:
             payee_id = _find_or_create(conn, "payees", "payee_id", record.name) if record.name else None
             conn.execute(
@@ -133,12 +177,13 @@ def import_transactions(conn, account_id, records):
                     record.memo or None, None, None, None, None,
                 ],
             )
+            transaction_ids.append(transaction_id)
             transaction_id += 1
     except Exception:
         conn.rollback()
         raise
     conn.commit()
-    return len(records)
+    return transaction_ids
 
 
 def update_transaction(

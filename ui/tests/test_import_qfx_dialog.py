@@ -81,6 +81,7 @@ def test_apply_inserts_only_non_duplicate_records_and_accepts(qapp, conn):
 
     assert dialog.result() == QDialog.Accepted
     assert dialog.imported_count == 1
+    assert len(dialog.imported_transaction_ids) == 1
     row = conn.execute(
         "SELECT p.name, t.amount FROM transactions t JOIN payees p ON p.payee_id = t.payee_id "
         "WHERE t.account_id = 1 AND t.txn_date = '2024-04-01'"

@@ -10,7 +10,10 @@ from writes import (
     add_transaction,
     delete_account,
     delete_transaction,
+    delete_transactions,
     import_transactions,
+    restore_transaction,
+    restore_transaction_fields,
     set_account_closed,
     update_account,
     update_transaction,
@@ -76,6 +79,78 @@ def test_delete_transaction_leaves_other_transactions_intact(conn):
         "SELECT transaction_id FROM transactions WHERE transaction_id = 1001"
     ).fetchone()
     assert row == (1001,)
+
+
+def test_restore_transaction_reinserts_deleted_row_with_same_id(conn):
+    row = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    delete_transaction(conn, transaction_id=1000)
+
+    restore_transaction(conn, row)
+
+    restored = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    assert restored == row
+
+
+def test_restore_transaction_leaves_other_rows_intact(conn):
+    row = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    delete_transaction(conn, transaction_id=1000)
+
+    restore_transaction(conn, row)
+
+    other = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = 1001"
+    ).fetchone()
+    assert other == (1001,)
+
+
+def test_restore_transaction_fields_reverts_an_edit(conn):
+    before = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    update_transaction(
+        conn, transaction_id=1000, txn_date=date(2024, 4, 2), amount=Decimal("-99.00"),
+        memo="edited",
+    )
+
+    restore_transaction_fields(conn, before)
+
+    after = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    assert after == before
+
+
+def test_restore_transaction_fields_does_not_touch_account_id_or_transaction_id(conn):
+    before = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+
+    restore_transaction_fields(conn, before)  # no prior edit — should be a no-op
+
+    after = conn.execute(
+        "SELECT transaction_id, account_id, category_id, payee_id, txn_date, amount, memo, "
+        "security_id, activity, quantity, price, linked_account_id "
+        "FROM transactions WHERE transaction_id = 1000"
+    ).fetchone()
+    assert after == before
 
 
 def test_delete_account_removes_the_account_row(conn):
@@ -241,6 +316,28 @@ def test_update_transaction_rolls_back_dictionary_inserts_on_failure(conn):
     assert data.list_payees(conn) == before_payees
 
 
+def test_delete_transactions_removes_all_given_ids(conn):
+    delete_transactions(conn, [1000, 1001])
+    rows = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id IN (1000, 1001)"
+    ).fetchall()
+    assert rows == []
+
+
+def test_delete_transactions_leaves_other_rows_intact(conn):
+    delete_transactions(conn, [1000])
+    row = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = 1001"
+    ).fetchone()
+    assert row == (1001,)
+
+
+def test_delete_transactions_does_nothing_for_empty_list(conn):
+    before_count = len(data.list_transactions(conn, account_id=1))
+    delete_transactions(conn, [])
+    assert len(data.list_transactions(conn, account_id=1)) == before_count
+
+
 def _qfx_record(name="New Payee", memo="a memo", amount="-10.00", txn_date=date(2024, 4, 1)):
     return QfxRecord(
         trn_type="DEBIT", txn_date=txn_date, amount=Decimal(amount),
@@ -254,9 +351,9 @@ def test_import_transactions_inserts_one_row_per_record(conn):
         _qfx_record(name="New Cafe", amount="-9.00", txn_date=date(2024, 4, 2)),
     ]
 
-    count = import_transactions(conn, account_id=1, records=records)
+    transaction_ids = import_transactions(conn, account_id=1, records=records)
 
-    assert count == 2
+    assert len(transaction_ids) == 2
     rows = conn.execute(
         "SELECT t.txn_date, t.amount, t.memo, p.name FROM transactions t "
         "JOIN payees p ON p.payee_id = t.payee_id "
@@ -302,6 +399,13 @@ def test_import_transactions_uses_sequential_ids_after_max(conn):
     assert sorted(row[0] for row in ids) == [3004, 3005]
 
 
+def test_import_transactions_returns_the_new_transaction_ids(conn):
+    # conn fixture seeds transaction_ids up to 3003 (see conftest.py).
+    records = [_qfx_record(), _qfx_record(txn_date=date(2024, 4, 2))]
+    transaction_ids = import_transactions(conn, account_id=1, records=records)
+    assert sorted(transaction_ids) == [3004, 3005]
+
+
 def test_import_transactions_rolls_back_all_rows_on_failure(conn):
     before_count = len(data.list_transactions(conn, account_id=1))
     before_payees = data.list_payees(conn)
@@ -315,5 +419,5 @@ def test_import_transactions_rolls_back_all_rows_on_failure(conn):
     assert data.list_payees(conn) == before_payees
 
 
-def test_import_transactions_returns_zero_for_empty_list(conn):
-    assert import_transactions(conn, account_id=1, records=[]) == 0
+def test_import_transactions_returns_empty_list_for_empty_records(conn):
+    assert import_transactions(conn, account_id=1, records=[]) == []
