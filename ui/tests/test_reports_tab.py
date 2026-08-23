@@ -1,3 +1,4 @@
+import functools
 from datetime import date
 
 import pytest
@@ -5,6 +6,10 @@ from PySide6.QtCore import QDate, QItemSelectionModel, Qt
 from PySide6.QtWidgets import QDialog
 
 import reports_tab
+from projection_settings import (
+    load_projection_settings as _real_load_projection_settings,
+    save_projection_settings as _real_save_projection_settings,
+)
 from reports_tab import REPORTS, ReportsPane
 
 
@@ -746,3 +751,29 @@ def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, 
 
     assert saved["retirement_age"] == 70
     assert "starting_investment_value" not in saved
+
+
+def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatch, tmp_path):
+    settings_path = tmp_path / "projection_settings.json"
+    monkeypatch.setattr(
+        reports_tab, "load_projection_settings",
+        functools.partial(_real_load_projection_settings, path=settings_path),
+    )
+    monkeypatch.setattr(
+        reports_tab, "save_projection_settings",
+        functools.partial(_real_save_projection_settings, path=settings_path),
+    )
+
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+    pane.projection_controls.retirement_age_spinbox.setValue(70)
+    pane.projection_controls.update_button.click()
+
+    pane2 = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    monkeypatch.setattr(
+        reports_tab, "load_projection_settings",
+        functools.partial(_real_load_projection_settings, path=settings_path),
+    )
+    _select_projection_report(pane2)
+
+    assert pane2.projection_controls.retirement_age_spinbox.value() == 70

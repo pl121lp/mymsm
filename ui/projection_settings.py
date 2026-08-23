@@ -18,8 +18,11 @@ def load_projection_settings(path=DEFAULT_SETTINGS_PATH):
     path = Path(path)
     if not path.exists():
         return {}
-    with open(path) as f:
-        return json.load(f)
+    try:
+        with open(path) as f:
+            return json.load(f)
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def save_projection_settings(settings, path=DEFAULT_SETTINGS_PATH):

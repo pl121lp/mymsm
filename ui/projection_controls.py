@@ -165,5 +165,9 @@ class ProjectionControlsPanel(QWidget):
             "social_security_start_year": self.social_security_start_year_spinbox,
         }
         for key, widget in widgets.items():
-            if key in values:
+            if key not in values:
+                continue
+            try:
                 widget.setValue(values[key])
+            except TypeError:
+                continue
