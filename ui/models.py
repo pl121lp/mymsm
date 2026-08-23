@@ -238,6 +238,79 @@ class IncomeByCategoryTableModel(SpendingByCategoryTableModel):
     COLUMNS = ["Category", "Income (USD)"]
 
 
+def compute_investment_analysis(prices, start, end):
+    """Per-investment price gain within [start, end], highest % increase first.
+
+    `prices` are (security_name, txn_date, price) rows, e.g. from
+    data.list_investment_prices(). % increase is (highest - lowest) / lowest
+    over whatever priced trades fall in range, regardless of their order in
+    time. Investments with no priced trades in range are omitted.
+    """
+    points_by_name = {}
+    for name, txn_date, price in prices:
+        if txn_date < start or txn_date > end:
+            continue
+        points_by_name.setdefault(name, []).append((txn_date, price))
+
+    results = []
+    for name, points in points_by_name.items():
+        dates = [txn_date for txn_date, _price in points]
+        security_prices = [price for _txn_date, price in points]
+        lowest = min(security_prices)
+        highest = max(security_prices)
+        pct_increase = (highest - lowest) / lowest * 100 if lowest else Decimal("0")
+        results.append((name, pct_increase, lowest, highest, min(dates), max(dates)))
+
+    return sorted(results, key=lambda item: item[1], reverse=True)
+
+
+class InvestmentAnalysisTableModel(QAbstractTableModel):
+    COLUMNS = ["Investment", "% Increase", "Lowest Price", "Highest Price", "Date Range"]
+
+    def __init__(self, investments=None, parent=None):
+        super().__init__(parent)
+        self._investments = investments or []
+
+    def set_investments(self, investments):
+        self.beginResetModel()
+        self._investments = investments
+        self.endResetModel()
+
+    def investment_at(self, row):
+        return self._investments[row]
+
+    def sort(self, column, order=Qt.AscendingOrder):
+        if not self._investments:
+            return
+        self.layoutAboutToBeChanged.emit()
+        self._investments.sort(key=lambda item: item[column], reverse=order == Qt.DescendingOrder)
+        self.layoutChanged.emit()
+
+    def rowCount(self, parent=None):
+        return len(self._investments)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        name, pct_increase, lowest, highest, first_date, last_date = self._investments[index.row()]
+        values = [
+            name,
+            f"{pct_increase:+.2f}%",
+            format_currency(lowest),
+            format_currency(highest),
+            f"{first_date.isoformat()} to {last_date.isoformat()}",
+        ]
+        return values[index.column()]
+
+
 class AccountTableModel(QAbstractTableModel):
     COLUMNS = ["Name", "Type", "Currency", "Balance"]
 

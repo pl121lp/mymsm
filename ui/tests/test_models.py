@@ -8,6 +8,7 @@ from models import (
     CategoryTransactionTableModel,
     DictionaryListModel,
     IncomeByCategoryTableModel,
+    InvestmentAnalysisTableModel,
     SearchResultTableModel,
     SpendingByCategoryTableModel,
     TransactionTableModel,
@@ -15,6 +16,7 @@ from models import (
     build_loan_transaction_rows,
     compute_account_value_history,
     compute_income_by_category,
+    compute_investment_analysis,
     compute_loan_totals,
     compute_net_worth_series,
     compute_spending_by_category,
@@ -675,6 +677,123 @@ def test_compute_income_by_category_ignores_negative_amounts():
         transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
     )
     assert result == [("Salary", Decimal("1200.00"))]
+
+
+def test_compute_investment_analysis_sorts_by_highest_percentage_increase_first():
+    prices = [
+        ("Fund A", date(2024, 1, 1), Decimal("10.00")),
+        ("Fund A", date(2024, 2, 1), Decimal("20.00")),
+        ("Fund B", date(2024, 1, 1), Decimal("50.00")),
+        ("Fund B", date(2024, 2, 1), Decimal("55.00")),
+    ]
+    result = compute_investment_analysis(prices, date(2024, 1, 1), date(2024, 12, 31))
+    assert result == [
+        ("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1)),
+        ("Fund B", Decimal("10"), Decimal("50.00"), Decimal("55.00"), date(2024, 1, 1), date(2024, 2, 1)),
+    ]
+
+
+def test_compute_investment_analysis_filters_to_date_range():
+    prices = [
+        ("Fund A", date(2024, 1, 1), Decimal("10.00")),
+        ("Fund A", date(2024, 2, 1), Decimal("20.00")),
+        ("Fund A", date(2024, 6, 1), Decimal("5.00")),
+    ]
+    result = compute_investment_analysis(prices, date(2024, 1, 1), date(2024, 3, 1))
+    assert result == [
+        ("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1)),
+    ]
+
+
+def test_compute_investment_analysis_excludes_investments_with_no_prices_in_range():
+    prices = [
+        ("Fund A", date(2024, 1, 1), Decimal("10.00")),
+        ("Fund B", date(2024, 6, 1), Decimal("5.00")),
+    ]
+    result = compute_investment_analysis(prices, date(2024, 1, 1), date(2024, 3, 1))
+    assert [row[0] for row in result] == ["Fund A"]
+
+
+def test_compute_investment_analysis_single_price_point_has_zero_percent_increase():
+    prices = [("Fund A", date(2024, 1, 1), Decimal("10.00"))]
+    result = compute_investment_analysis(prices, date(2024, 1, 1), date(2024, 12, 31))
+    assert result == [
+        ("Fund A", Decimal("0"), Decimal("10.00"), Decimal("10.00"), date(2024, 1, 1), date(2024, 1, 1)),
+    ]
+
+
+def test_compute_investment_analysis_zero_lowest_price_does_not_crash():
+    prices = [
+        ("Fund A", date(2024, 1, 1), Decimal("0.00")),
+        ("Fund A", date(2024, 2, 1), Decimal("5.00")),
+    ]
+    result = compute_investment_analysis(prices, date(2024, 1, 1), date(2024, 12, 31))
+    assert result == [
+        ("Fund A", Decimal("0"), Decimal("0.00"), Decimal("5.00"), date(2024, 1, 1), date(2024, 2, 1)),
+    ]
+
+
+def test_compute_investment_analysis_empty_prices_returns_empty_list():
+    assert compute_investment_analysis([], date(2024, 1, 1), date(2024, 12, 31)) == []
+
+
+def test_investment_analysis_model_columns_are_name_percent_prices_and_range():
+    model = InvestmentAnalysisTableModel(
+        [("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1))]
+    )
+    assert model.rowCount() == 1
+    assert model.columnCount() == 5
+    assert _data(model, 0, 0) == "Fund A"
+    assert _data(model, 0, 1) == "+100.00%"
+    assert _data(model, 0, 2) == "10.00"
+    assert _data(model, 0, 3) == "20.00"
+    assert _data(model, 0, 4) == "2024-01-01 to 2024-02-01"
+
+
+def test_investment_analysis_model_set_investments_replaces_contents():
+    model = InvestmentAnalysisTableModel()
+    assert model.rowCount() == 0
+    model.set_investments(
+        [("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1))]
+    )
+    assert model.rowCount() == 1
+    assert _data(model, 0, 0) == "Fund A"
+
+
+def test_investment_analysis_model_sort_ascending_by_percent_increase():
+    model = InvestmentAnalysisTableModel(
+        [
+            ("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1)),
+            ("Fund B", Decimal("10"), Decimal("50.00"), Decimal("55.00"), date(2024, 1, 1), date(2024, 2, 1)),
+        ]
+    )
+    model.sort(1, Qt.AscendingOrder)
+    assert _data(model, 0, 0) == "Fund B"
+    assert _data(model, 1, 0) == "Fund A"
+
+
+def test_investment_analysis_model_sort_descending_by_percent_increase():
+    model = InvestmentAnalysisTableModel(
+        [
+            ("Fund B", Decimal("10"), Decimal("50.00"), Decimal("55.00"), date(2024, 1, 1), date(2024, 2, 1)),
+            ("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1)),
+        ]
+    )
+    model.sort(1, Qt.DescendingOrder)
+    assert _data(model, 0, 0) == "Fund A"
+    assert _data(model, 1, 0) == "Fund B"
+
+
+def test_investment_analysis_model_sort_by_name_column():
+    model = InvestmentAnalysisTableModel(
+        [
+            ("Fund B", Decimal("10"), Decimal("50.00"), Decimal("55.00"), date(2024, 1, 1), date(2024, 2, 1)),
+            ("Fund A", Decimal("100"), Decimal("10.00"), Decimal("20.00"), date(2024, 1, 1), date(2024, 2, 1)),
+        ]
+    )
+    model.sort(0, Qt.AscendingOrder)
+    assert _data(model, 0, 0) == "Fund A"
+    assert _data(model, 1, 0) == "Fund B"
 
 
 def test_compute_income_by_category_filters_to_date_range():

@@ -53,3 +53,12 @@ class CategoryFilterDialog(QDialog):
             for i in range(self.list_widget.count())
             if self.list_widget.item(i).checkState() == Qt.Checked
         }
+
+
+class InvestmentFilterDialog(CategoryFilterDialog):
+    def __init__(self, investment_names, selected_names, parent=None):
+        super().__init__(investment_names, selected_names, parent)
+        self.setWindowTitle("Custom Investments")
+
+    def selected_investments(self):
+        return self.selected_categories()

@@ -278,6 +278,19 @@ def list_securities(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     ).fetchall()
 
 
+def list_investment_prices(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    """Every priced Buy/Sell trade across all accounts, for the investment
+    analysis report. Rows are (security_name, txn_date, price)."""
+    query = """
+        SELECT s.name, t.txn_date, t.price
+        FROM transactions t
+        JOIN securities s ON s.security_id = t.security_id
+        WHERE t.activity IN (?, ?) AND t.price IS NOT NULL
+        ORDER BY s.name, t.txn_date
+    """
+    return conn.execute(query, [BUY_ACTIVITY, SELL_ACTIVITY]).fetchall()
+
+
 def list_security_history(
     conn: duckdb.DuckDBPyConnection, security_id: int
 ) -> list[tuple]:

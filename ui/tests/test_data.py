@@ -7,6 +7,7 @@ from data import (
     list_categories,
     list_category_spending,
     list_category_transactions,
+    list_investment_prices,
     list_loan_interest_payments,
     list_payee_transactions,
     list_securities,
@@ -184,6 +185,21 @@ def test_list_security_history_computes_per_account_running_total(dict_conn):
 
 def test_list_security_history_unknown_security_returns_empty(dict_conn):
     assert list_security_history(dict_conn, security_id=999) == []
+
+
+def test_list_investment_prices_returns_priced_trades_across_accounts(dict_conn):
+    assert list_investment_prices(dict_conn) == [
+        ("Vanguard Total Stock Market Index", date(2024, 1, 10), Decimal("18.39")),
+        ("Vanguard Total Stock Market Index", date(2024, 1, 15), Decimal("20.00")),
+        ("Vanguard Total Stock Market Index", date(2024, 2, 10), Decimal("21.54")),
+        ("Vanguard Total Stock Market Index", date(2024, 2, 20), Decimal("25.00")),
+        ("Vanguard Total Stock Market Index", date(2024, 3, 1), Decimal("22.63")),
+    ]
+
+
+def test_list_investment_prices_excludes_securities_with_no_priced_trades(dict_conn):
+    names = {row[0] for row in list_investment_prices(dict_conn)}
+    assert "Apple Inc" not in names
 
 
 def test_count_transactions_by_payee_ignores_null_payee(dict_conn):

@@ -22,16 +22,18 @@ from PySide6.QtWidgets import (
 from PySide6.QtCharts import QChart, QChartView
 
 import data
-from category_filter_dialog import CategoryFilterDialog
+from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
 from charts import build_bar_chart, build_pie_chart
 from data import INVESTMENT_ACCOUNT_TYPE
 from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
+    InvestmentAnalysisTableModel,
     SpendingByCategoryTableModel,
     compute_account_value_history,
     compute_income_by_category,
+    compute_investment_analysis,
     compute_net_worth_series,
     compute_spending_by_category,
     generate_sample_dates,
@@ -41,10 +43,12 @@ from table_copy import enable_cell_copy
 NET_WORTH_REPORT_ID = "net_worth_over_time"
 SPENDING_BY_CATEGORY_REPORT_ID = "spending_by_category"
 INCOME_BY_CATEGORY_REPORT_ID = "income_by_category"
+INVESTMENT_ANALYSIS_REPORT_ID = "investment_analysis"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
     (INCOME_BY_CATEGORY_REPORT_ID, "Income by category"),
+    (INVESTMENT_ANALYSIS_REPORT_ID, "Investment analysis"),
 ]
 
 
@@ -63,6 +67,8 @@ class ReportsPane(QWidget):
         self._category_transactions = []
         self._category_totals = []
         self._selected_categories = None
+        self._investment_prices = []
+        self._selected_investments = None
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -82,6 +88,23 @@ class ReportsPane(QWidget):
         self.category_table_view.setVisible(False)
         self.category_table_view.doubleClicked.connect(self._on_category_table_double_clicked)
         enable_cell_copy(self.category_table_view, extra_actions=self._category_table_context_actions)
+
+        self.investment_table_model = InvestmentAnalysisTableModel()
+        self.investment_table_view = QTableView()
+        self.investment_table_view.setModel(self.investment_table_model)
+        self.investment_table_view.horizontalHeader().setStretchLastSection(True)
+        self.investment_table_view.setSortingEnabled(True)
+        self.investment_table_view.setVisible(False)
+        enable_cell_copy(self.investment_table_view)
+
+        self.custom_investments_button = QPushButton("Custom Investments")
+        self.custom_investments_button.clicked.connect(self._on_custom_investments_clicked)
+        self.investment_controls_row = QWidget()
+        investment_controls_layout = QHBoxLayout(self.investment_controls_row)
+        investment_controls_layout.setContentsMargins(0, 0, 0, 0)
+        investment_controls_layout.addWidget(self.custom_investments_button)
+        investment_controls_layout.addStretch()
+        self.investment_controls_row.setVisible(False)
 
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
@@ -134,6 +157,8 @@ class ReportsPane(QWidget):
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(self.chart_view)
         chart_layout.addWidget(self.category_table_view)
+        chart_layout.addWidget(self.investment_table_view)
+        chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.range_label)
         chart_layout.addLayout(range_row)
@@ -154,12 +179,15 @@ class ReportsPane(QWidget):
             self.chart_view.setChart(QChart())
             self.spending_table_model.set_categories([])
             self.income_table_model.set_categories([])
+            self.investment_table_model.set_investments([])
             self.range_label.setText("")
             self.view_selector_row.setVisible(False)
+            self.investment_controls_row.setVisible(False)
             return
         report_id = self.list_model.id_at(indexes[0].row())
         self._active_report_id = report_id
         is_category_report = report_id in self._category_reports
+        is_investment_report = report_id == INVESTMENT_ANALYSIS_REPORT_ID
         self.view_selector_row.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
@@ -168,10 +196,14 @@ class ReportsPane(QWidget):
             self.category_table_view.setModel(self._category_reports[report_id]["model"])
         self.chart_view.setVisible(report_id == NET_WORTH_REPORT_ID)
         self.category_table_view.setVisible(is_category_report)
+        self.investment_table_view.setVisible(is_investment_report)
+        self.investment_controls_row.setVisible(is_investment_report)
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
         elif is_category_report:
             self._load_category_report(report_id)
+        elif is_investment_report:
+            self._load_investment_report()
 
     def _on_view_mode_changed(self):
         if self._active_report_id not in self._category_reports:
@@ -241,6 +273,13 @@ class ReportsPane(QWidget):
                 self._report_error("Start date must be on or before end date.")
                 return
             self._render_category_table(start, end)
+        elif self._active_report_id == INVESTMENT_ANALYSIS_REPORT_ID:
+            start = self.start_date_edit.date().toPython()
+            end = self.end_date_edit.date().toPython()
+            if start > end:
+                self._report_error("Start date must be on or before end date.")
+                return
+            self._render_investment_table(start, end)
 
     def _render_net_worth_chart(self, start, end):
         sample_dates = generate_sample_dates(start, end)
@@ -292,6 +331,54 @@ class ReportsPane(QWidget):
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
         if self.view_selector.currentText() == "Pie Chart":
             self._render_pie_chart()
+
+    def _load_investment_report(self):
+        self._selected_investments = None
+        try:
+            prices = data.list_investment_prices(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load investment analysis report: {exc}")
+            return
+
+        if not prices:
+            self._investment_prices = []
+            self.investment_table_model.set_investments([])
+            self.range_label.setText("")
+            self._report_error("No priced investment trades available for investment analysis report.")
+            return
+
+        self._investment_prices = prices
+        earliest = min(txn_date for _, txn_date, _ in prices)
+        latest = max(txn_date for _, txn_date, _ in prices)
+
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        self.start_date_edit.setDate(_to_qdate(earliest))
+        self.end_date_edit.setDate(_to_qdate(latest))
+        self.start_date_edit.blockSignals(False)
+        self.end_date_edit.blockSignals(False)
+
+        self._render_investment_table(earliest, latest)
+
+    def _render_investment_table(self, start, end):
+        investments = compute_investment_analysis(self._investment_prices, start, end)
+        if self._selected_investments is not None:
+            investments = [row for row in investments if row[0] in self._selected_investments]
+        self.investment_table_model.set_investments(investments)
+        self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+
+    def _on_custom_investments_clicked(self):
+        all_names = sorted({name for name, _txn_date, _price in self._investment_prices})
+        current_selection = (
+            self._selected_investments if self._selected_investments is not None else set(all_names)
+        )
+        dialog = InvestmentFilterDialog(all_names, current_selection, self)
+        if dialog.exec() != QDialog.Accepted:
+            return
+        self._selected_investments = dialog.selected_investments()
+        start = self.start_date_edit.date().toPython()
+        end = self.end_date_edit.date().toPython()
+        self._render_investment_table(start, end)
 
     def _render_pie_chart(self):
         pie_title = self._category_reports[self._active_report_id]["pie_title"]

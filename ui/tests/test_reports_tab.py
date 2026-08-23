@@ -25,6 +25,12 @@ def _select_income_report(pane):
     )
 
 
+def _select_investment_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(3, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
 def _add_income_transactions(conn):
     conn.execute(
         "INSERT INTO categories VALUES (30, 'Salary'), (31, 'Freelance')"
@@ -59,6 +65,11 @@ def test_reports_list_shows_spending_by_category_report(qapp, dict_conn):
 def test_reports_list_shows_income_by_category_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.data(pane.list_model.index(2, 0)) == "Income by category"
+
+
+def test_reports_list_shows_investment_analysis_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.data(pane.list_model.index(3, 0)) == "Investment analysis"
 
 
 def test_selecting_net_worth_report_draws_a_bar_chart(qapp, dict_conn):
@@ -208,6 +219,105 @@ def test_updating_range_recomputes_pie_chart_for_narrower_window(qapp, dict_conn
     series = pane.chart_view.chart().series()[0]
     assert len(series.slices()) == 1
     assert series.slices()[0].label() == "Groceries"
+
+
+class _FakeInvestmentFilterDialog:
+    result = QDialog.Accepted
+    last_init_args = None
+
+    def __init__(self, investment_names, selected_names, parent=None):
+        _FakeInvestmentFilterDialog.last_init_args = (set(investment_names), set(selected_names))
+        self._selection = {"Vanguard Total Stock Market Index"}
+
+    def exec(self):
+        return self.__class__.result
+
+    def selected_investments(self):
+        return self._selection
+
+
+def test_custom_investments_button_hidden_for_net_worth_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert not pane.custom_investments_button.isVisible()
+
+
+def test_custom_investments_button_visible_for_investment_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_investment_report(pane)
+    assert pane.custom_investments_button.isVisible()
+
+
+def test_custom_investments_dialog_offers_all_investments_preselected(qapp, dict_conn, monkeypatch):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'Small Cap Fund')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 3, NULL, NULL, '2024-01-10', 100.00, NULL, 502, '1', 1.0, 100.00, NULL)"
+    )
+    monkeypatch.setattr(reports_tab, "InvestmentFilterDialog", _FakeInvestmentFilterDialog)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    pane.custom_investments_button.click()
+
+    all_names, selected_names = _FakeInvestmentFilterDialog.last_init_args
+    assert all_names == {"Vanguard Total Stock Market Index", "Small Cap Fund"}
+    assert selected_names == {"Vanguard Total Stock Market Index", "Small Cap Fund"}
+
+
+def test_accepting_custom_investments_filters_table(qapp, dict_conn, monkeypatch):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'Small Cap Fund')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 3, NULL, NULL, '2024-01-10', 100.00, NULL, 502, '1', 1.0, 100.00, NULL)"
+    )
+    monkeypatch.setattr(reports_tab, "InvestmentFilterDialog", _FakeInvestmentFilterDialog)
+    _FakeInvestmentFilterDialog.result = QDialog.Accepted
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    pane.custom_investments_button.click()
+
+    view = pane.investment_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 0) == "Vanguard Total Stock Market Index"
+
+
+def test_canceling_custom_investments_leaves_selection_unchanged(qapp, dict_conn, monkeypatch):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'Small Cap Fund')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 3, NULL, NULL, '2024-01-10', 100.00, NULL, 502, '1', 1.0, 100.00, NULL)"
+    )
+    monkeypatch.setattr(reports_tab, "InvestmentFilterDialog", _FakeInvestmentFilterDialog)
+    _FakeInvestmentFilterDialog.result = QDialog.Rejected
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    pane.custom_investments_button.click()
+
+    assert pane.investment_table_view.model().rowCount() == 2
+
+
+def test_reselecting_investment_report_resets_investment_filter_to_all(qapp, dict_conn, monkeypatch):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'Small Cap Fund')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 3, NULL, NULL, '2024-01-10', 100.00, NULL, 502, '1', 1.0, 100.00, NULL)"
+    )
+    monkeypatch.setattr(reports_tab, "InvestmentFilterDialog", _FakeInvestmentFilterDialog)
+    _FakeInvestmentFilterDialog.result = QDialog.Accepted
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+    pane.custom_investments_button.click()
+    assert pane.investment_table_view.model().rowCount() == 1
+
+    _select_net_worth_report(pane)
+    _select_investment_report(pane)
+
+    assert pane.investment_table_view.model().rowCount() == 2
 
 
 class _FakeCategoryFilterDialog:
@@ -446,3 +556,106 @@ def test_show_transactions_action_opens_dialog_for_income_report(qapp, dict_conn
     category_name, transactions = _FakeCategoryTransactionsDialog.last_init_args
     assert category_name == "Salary"
     assert [t[0] for t in transactions] == [2000]
+
+
+def test_selecting_investment_report_shows_table_and_hides_chart(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert pane.chart_view.isVisible()
+
+    _select_investment_report(pane)
+    assert pane.investment_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+
+
+def test_investment_report_hides_view_selector_and_custom_categories_button(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_investment_report(pane)
+    assert not pane.view_selector_row.isVisible()
+
+
+def test_selecting_investment_report_defaults_date_range_to_full_history(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+    assert pane.start_date_edit.date().toPython() == date(2024, 1, 10)
+    assert pane.end_date_edit.date().toPython() == date(2024, 3, 1)
+    assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-01"
+
+
+def test_selecting_investment_report_sorts_by_percentage_increase_descending(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    view = pane.investment_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 0) == "Vanguard Total Stock Market Index"
+    assert _table_cell(view, 0, 1) == "+35.94%"
+    assert _table_cell(view, 0, 2) == "18.39"
+    assert _table_cell(view, 0, 3) == "25.00"
+    assert _table_cell(view, 0, 4) == "2024-01-10 to 2024-03-01"
+
+
+def test_investment_table_supports_clicking_headers_to_sort(qapp, dict_conn):
+    dict_conn.execute(
+        "INSERT INTO securities VALUES (502, 'Small Cap Fund')"
+    )
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 3, NULL, NULL, '2024-01-10', 100.00, NULL, 502, '1', 1.0, 100.00, NULL), "
+        "(5001, 3, NULL, NULL, '2024-02-10', -1.00, NULL, 502, '2', 1.0, 101.00, NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    view = pane.investment_table_view
+    assert view.isSortingEnabled()
+    assert _table_cell(view, 0, 0) == "Vanguard Total Stock Market Index"
+
+    view.sortByColumn(1, Qt.AscendingOrder)
+
+    assert _table_cell(view, 0, 0) == "Small Cap Fund"
+    assert _table_cell(view, 1, 0) == "Vanguard Total Stock Market Index"
+
+
+def test_updating_investment_range_recomputes_table_for_narrower_window(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 1, 10))
+    pane.end_date_edit.setDate(QDate(2024, 2, 10))
+    pane.update_range_button.click()
+
+    assert pane.range_label.text() == "Showing 2024-01-10 to 2024-02-10"
+    view = pane.investment_table_view
+    assert view.model().rowCount() == 1
+    assert _table_cell(view, 0, 1) == "+17.13%"
+    assert _table_cell(view, 0, 3) == "21.54"
+
+
+def test_updating_investment_range_with_start_after_end_reports_error_and_keeps_table(qapp, dict_conn):
+    errors = []
+    pane = ReportsPane(dict_conn, report_error=errors.append, to_usd=lambda cur, amt: amt)
+    _select_investment_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 3, 1))
+    pane.end_date_edit.setDate(QDate(2024, 1, 10))
+    pane.update_range_button.click()
+
+    assert errors == ["Start date must be on or before end date."]
+    assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-01"
+    assert pane.investment_table_view.model().rowCount() == 1
+
+
+def test_selecting_investment_report_does_not_disturb_spending_table(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_spending_report(pane)
+    assert pane.category_table_view.model().rowCount() == 2
+
+    _select_investment_report(pane)
+    assert pane.investment_table_view.model().rowCount() == 1
+
+    _select_spending_report(pane)
+    assert _table_cell(pane.category_table_view, 0, 0) == "Utilities"

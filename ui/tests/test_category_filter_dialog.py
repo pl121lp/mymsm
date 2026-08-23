@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 
-from category_filter_dialog import CategoryFilterDialog
+from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 
 
 def test_dialog_initializes_checkstate_from_selected_names(qapp):
@@ -31,3 +31,19 @@ def test_unchecking_one_item_removes_it_from_selection(qapp):
     dialog.list_widget.item(1).setCheckState(Qt.Unchecked)
 
     assert dialog.selected_categories() == {"Groceries", "Utilities"}
+
+
+def test_investment_filter_dialog_has_its_own_window_title(qapp):
+    dialog = InvestmentFilterDialog(["Vanguard", "Apple"], {"Vanguard", "Apple"})
+
+    assert dialog.windowTitle() == "Custom Investments"
+
+
+def test_investment_filter_dialog_selected_investments_reflects_checkstate(qapp):
+    dialog = InvestmentFilterDialog(["Vanguard", "Apple"], {"Vanguard"})
+
+    assert dialog.selected_investments() == {"Vanguard"}
+
+    dialog.list_widget.item(1).setCheckState(Qt.Checked)
+
+    assert dialog.selected_investments() == {"Vanguard", "Apple"}
