@@ -380,11 +380,11 @@ git commit -m "feat: add id-preserving undo primitives to writes.py"
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `ui/tests/test_data.py` (add `get_transaction_row` to whatever `from data import (...)` or `import data` style that file already uses — check the top of the file first; use `data.get_transaction_row(...)` if the file calls functions via the `data.` prefix, matching its existing convention):
+`ui/tests/test_data.py` imports each function it tests by name — `from data import (count_transactions_by_payee, list_accounts, ...)` (an alphabetized multi-line list) — and calls it unqualified (e.g. `list_transactions(conn, ...)`), never with a `data.` prefix. Add `get_transaction_row` into that same alphabetized `from data import (...)` list, then add to `ui/tests/test_data.py`:
 
 ```python
 def test_get_transaction_row_returns_all_raw_columns(conn):
-    row = data.get_transaction_row(conn, transaction_id=1000)
+    row = get_transaction_row(conn, transaction_id=1000)
     assert row == (
         1000, 1, 10, 100, date(2024, 3, 15), Decimal("-52.30"), "weekly shop",
         None, None, None, None, None,
@@ -392,15 +392,15 @@ def test_get_transaction_row_returns_all_raw_columns(conn):
 
 
 def test_get_transaction_row_returns_none_for_unknown_id(conn):
-    assert data.get_transaction_row(conn, transaction_id=999999) is None
+    assert get_transaction_row(conn, transaction_id=999999) is None
 ```
 
-(`transaction_id=1000` and its column values come from the `conn` fixture in `ui/tests/conftest.py`; `date` and `Decimal` — import from `datetime`/`decimal` at the top of the test file if not already imported there.)
+(`transaction_id=1000` and its column values come from the `conn` fixture in `ui/tests/conftest.py`; `date` and `Decimal` are already imported at the top of `ui/tests/test_data.py`.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
 Run: `.venv/bin/pytest ui/tests/test_data.py -k get_transaction_row -v`
-Expected: FAIL with `AttributeError: module 'data' has no attribute 'get_transaction_row'`
+Expected: FAIL with `ImportError: cannot import name 'get_transaction_row' from 'data'`
 
 - [ ] **Step 3: Implement `get_transaction_row`**
 
@@ -786,6 +786,7 @@ def test_ctrl_z_undoes_a_delete(qapp, conn, monkeypatch):
 
 def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
     import import_qfx_dialog
+    import main_window
 
     def fake_exec(self):
         self.imported_transaction_ids = [9001, 9002]
@@ -798,11 +799,10 @@ def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
         return QDialog.Accepted
 
     monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", fake_exec)
+    # non-empty return, contents unused by fake_exec
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [object()])
     monkeypatch.setattr(
-        "main_window.parse_qfx", lambda path: [object()]  # non-empty, contents unused by fake_exec
-    )
-    monkeypatch.setattr(
-        QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
     )
 
     window = MainWindow(conn)
@@ -826,9 +826,7 @@ def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
     assert len(shortcuts) == 1
 ```
 
-Add the needed imports at the top of `ui/tests/test_main_window.py` (extend the existing `from PySide6...` import lines rather than adding new ones where a matching import line already exists):
-- `QShortcut`, `QKeySequence` from `PySide6.QtGui`
-- `QFileDialog` from `PySide6.QtWidgets` (add to the existing `from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton` line)
+Add one import at the top of `ui/tests/test_main_window.py`: `from PySide6.QtGui import QKeySequence, QShortcut`. No other top-level import is needed — `test_ctrl_z_undoes_an_import` reaches `QFileDialog` and `parse_qfx` via a local `import main_window` inside the test function, matching the existing convention already used by e.g. `test_import_button_does_nothing_when_no_file_selected` (`ui/tests/test_main_window.py:150-157`): `monkeypatch.setattr(main_window.QFileDialog, "getOpenFileName", ...)` and `monkeypatch.setattr(main_window, "parse_qfx", ...)`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
