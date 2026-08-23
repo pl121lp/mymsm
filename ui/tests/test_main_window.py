@@ -649,6 +649,90 @@ def test_delete_record_removes_record_and_reloads_on_confirm(qapp, conn, monkeyp
     assert window.statusBar().currentMessage() == "Record deleted."
 
 
+def test_loan_account_header_shows_principal_and_interest_totals(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+
+    text = window.account_details_label.text()
+    assert "Balance: -183.00 USD" in text
+    assert "Total Principal Paid: 817.00 USD" in text
+    assert "Total Interest Paid: 83.00 USD" in text
+
+
+def test_loan_account_transaction_table_shows_type_column_with_interest_rows(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+
+    assert window.transaction_model.headerData(2, Qt.Horizontal) == "Type"
+    kinds = {window.transaction_model.transaction_at(r)[10] for r in range(window.transaction_model.rowCount())}
+    assert kinds == {"Principal", "Interest"}
+    assert window.transaction_model.rowCount() == 7  # 4 principal + 3 matched interest
+
+
+def test_loan_interest_total_converts_using_paying_accounts_currency(qapp, loan_conn):
+    # Foreign Loan (SEK) is paid from Foreign Checking, also SEK — the
+    # interest total must be converted from the paying account's currency,
+    # not assumed to already match the loan's own currency.
+    window = MainWindow(loan_conn)
+    window.sek_rate_spinbox.setValue(0.1)  # deterministic rate for the assertion below
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Foreign Loan"
+    )
+    window.account_view.selectRow(row)
+
+    text = window.account_details_label.text()
+    assert "Total Interest Paid: 5.00 USD" in text  # 50.00 SEK * 0.1
+
+
+def test_loan_interest_row_double_click_does_not_open_edit_dialog(qapp, loan_conn, monkeypatch):
+    import add_record_dialog
+
+    opened = []
+    monkeypatch.setattr(
+        add_record_dialog.AddRecordDialog, "__init__",
+        lambda self, *a, **kw: opened.append(True),
+    )
+
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+    interest_row = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[10] == "Interest"
+    )
+
+    window._on_transaction_double_clicked(window.transaction_model.index(interest_row, 0))
+
+    assert opened == []
+
+
+def test_loan_interest_row_context_actions_offer_no_delete(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+    interest_row = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[10] == "Interest"
+    )
+
+    assert window._transaction_context_actions(interest_row) == []
+
+
+def test_loan_principal_row_double_click_still_opens_edit_dialog(qapp, loan_conn, monkeypatch):
+    import add_record_dialog
+
+    monkeypatch.setattr(add_record_dialog.AddRecordDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+    principal_row = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[10] == "Principal"
+    )
+
+    window._on_transaction_double_clicked(window.transaction_model.index(principal_row, 0))
+    # No exception means the dialog opened normally with a real transaction.
+
+
 def test_search_tab_is_present_and_holds_the_search_pane(qapp, conn):
     from search_tab import SearchPane
 

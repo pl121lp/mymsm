@@ -15,12 +15,30 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def test_build_accounts():
     accounts = build_accounts(FIXTURES)
-    assert len(accounts) == 4
+    assert len(accounts) == 6
     checking = next(a for a in accounts if a["account_id"] == 1)
     assert checking["name"] == "Checking"
     assert checking["is_closed"] is False
     old_card = next(a for a in accounts if a["account_id"] == 3)
     assert old_card["is_closed"] is True
+
+
+def test_build_accounts_resolves_interest_category_id_when_known():
+    accounts = build_accounts(FIXTURES, known_category_ids={10, 11})
+    car_loan = next(a for a in accounts if a["account_id"] == 5)
+    assert car_loan["interest_category_id"] == 10
+
+
+def test_build_accounts_nulls_interest_category_id_when_unknown():
+    accounts = build_accounts(FIXTURES, known_category_ids={10, 11})
+    old_mortgage = next(a for a in accounts if a["account_id"] == 6)
+    assert old_mortgage["interest_category_id"] is None
+
+
+def test_build_accounts_nulls_interest_category_id_without_known_category_ids():
+    accounts = build_accounts(FIXTURES)
+    car_loan = next(a for a in accounts if a["account_id"] == 5)
+    assert car_loan["interest_category_id"] is None
 
 
 def test_build_currencies_maps_id_to_iso_code():
@@ -185,6 +203,39 @@ def test_build_transactions_nulls_unknown_security_but_keeps_quantity_and_price(
     assert unknown_sec_txn["security_id"] is None
     assert unknown_sec_txn["quantity"] == Decimal("0.5")
     assert unknown_sec_txn["price"] == Decimal("10.0")
+
+
+def test_build_transactions_resolves_linked_account_id_when_known():
+    transactions = build_transactions(
+        FIXTURES,
+        known_account_ids={1, 2, 3, 4, 5, 6},
+        known_category_ids={10, 11},
+        known_payee_ids={100, 101},
+    )
+    principal = next(t for t in transactions if t["transaction_id"] == 3000)
+    assert principal["linked_account_id"] == 1
+
+
+def test_build_transactions_nulls_linked_account_id_when_unknown():
+    transactions = build_transactions(
+        FIXTURES,
+        known_account_ids={1, 2, 3, 4, 5, 6},
+        known_category_ids={10, 11},
+        known_payee_ids={100, 101},
+    )
+    principal = next(t for t in transactions if t["transaction_id"] == 3001)
+    assert principal["linked_account_id"] is None
+
+
+def test_build_transactions_nulls_linked_account_id_when_absent():
+    transactions = build_transactions(
+        FIXTURES,
+        known_account_ids={1, 2, 3},
+        known_category_ids={10, 11},
+        known_payee_ids={100, 101},
+    )
+    groceries = next(t for t in transactions if t["transaction_id"] == 1000)
+    assert groceries["linked_account_id"] is None
 
 
 def test_build_transactions_handles_missing_price():

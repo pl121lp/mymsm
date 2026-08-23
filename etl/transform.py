@@ -63,8 +63,13 @@ def build_currencies(raw_dir: Path) -> dict[int, str]:
     return result
 
 
-def build_accounts(raw_dir: Path, currencies: Optional[dict[int, str]] = None) -> list[dict]:
+def build_accounts(
+    raw_dir: Path,
+    currencies: Optional[dict[int, str]] = None,
+    known_category_ids: Optional[set[int]] = None,
+) -> list[dict]:
     currencies = currencies or {}
+    known_category_ids = known_category_ids or set()
     rows = read_raw_table(raw_dir, ACCOUNTS["table"])
     result = []
     skipped = 0
@@ -79,6 +84,9 @@ def build_accounts(raw_dir: Path, currencies: Optional[dict[int, str]] = None) -
         except ValueError:
             opening_balance = Decimal("0")
         currency_id = _to_int(row.get(ACCOUNTS["currency"]))
+        interest_category_id = _to_int(row.get(ACCOUNTS["interest_category"]))
+        if interest_category_id not in known_category_ids:
+            interest_category_id = None
         result.append({
             "account_id": account_id,
             "name": name,
@@ -86,6 +94,7 @@ def build_accounts(raw_dir: Path, currencies: Optional[dict[int, str]] = None) -
             "is_closed": (row.get(ACCOUNTS["is_closed"]) or "").strip() in ("1", "true", "True"),
             "opening_balance": opening_balance,
             "currency": currencies.get(currency_id, PRIMARY_CURRENCY),
+            "interest_category_id": interest_category_id,
         })
     logger.info("accounts: built %d, skipped %d", len(result), skipped)
     return result
@@ -193,6 +202,10 @@ def build_transactions(
         if security_id is not None and security_id not in known_security_ids:
             security_id = None
 
+        linked_account_id = _to_int(row.get(TRANSACTIONS["linked_account_id"]))
+        if linked_account_id is not None and linked_account_id not in known_account_ids:
+            linked_account_id = None
+
         details = investment_details.get(txn_id, {})
 
         result.append({
@@ -207,6 +220,7 @@ def build_transactions(
             "activity": row.get(TRANSACTIONS["activity"]) or None,
             "quantity": details.get("quantity"),
             "price": details.get("price"),
+            "linked_account_id": linked_account_id,
         })
     logger.info("transactions: built %d, skipped %d", len(result), skipped)
     return result

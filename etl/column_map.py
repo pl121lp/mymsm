@@ -17,6 +17,7 @@ ACCOUNTS = {
     "is_closed": "fClosed",
     "opening_balance": "amtOpen",
     "currency": "hcrnc",
+    "interest_category": "hcatInterest",
 }
 
 # Currency reference table. ACCOUNTS["currency"] holds a foreign key (hcrnc)
@@ -56,6 +57,7 @@ TRANSACTIONS = {
     "memo": "mMemo",
     "security_id": "hsec",
     "activity": "act",
+    "linked_account_id": "hacctLink",
 }
 
 # Investment detail for a transaction (quantity/unit price of a buy, sell,

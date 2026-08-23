@@ -11,7 +11,9 @@ from models import (
     SpendingByCategoryTableModel,
     TransactionTableModel,
     activity_label,
+    build_loan_transaction_rows,
     compute_account_value_history,
+    compute_loan_totals,
     compute_net_worth_series,
     compute_spending_by_category,
     generate_sample_dates,
@@ -208,6 +210,126 @@ def test_sort_investment_transactions_by_quantity():
     model.set_transactions(rows, is_investment=True)
     model.sort(3, Qt.AscendingOrder)
     assert [_data(model, r, 3) for r in range(2)] == ["1.0000", "5.0000"]
+
+
+LOAN_PRINCIPAL_ROW = (
+    2000, date(2024, 1, 15), "NFCU", None, "Principal", Decimal("200.00"),
+    None, None, None, None, "Principal",
+)
+
+LOAN_INTEREST_ROW = (
+    None, date(2024, 1, 15), "NFCU", None, None, Decimal("30.00"),
+    None, None, None, None, "Interest",
+)
+
+
+def test_loan_account_shows_loan_columns():
+    model = TransactionTableModel()
+    model.set_transactions([LOAN_PRINCIPAL_ROW, LOAN_INTEREST_ROW], is_loan=True)
+    assert [
+        model.headerData(i, Qt.Horizontal) for i in range(model.columnCount())
+    ] == ["Date", "Payee", "Type", "Memo", "Amount"]
+    assert _data(model, 0, 0) == "2024-01-15"
+    assert _data(model, 0, 1) == "NFCU"
+    assert _data(model, 0, 2) == "Principal"
+    assert _data(model, 0, 3) == "Principal"
+    assert _data(model, 0, 4) == "200.00"
+    assert _data(model, 1, 2) == "Interest"
+    assert _data(model, 1, 3) == ""
+
+
+def test_switching_back_from_loan_restores_default_columns():
+    model = TransactionTableModel()
+    model.set_transactions([LOAN_PRINCIPAL_ROW], is_loan=True)
+    model.set_transactions([NON_INVESTMENT_ROW], is_loan=False)
+    assert model.columnCount() == 5
+    assert _data(model, 0, 1) == "Store A"
+
+
+def test_loan_transaction_at_returns_full_row_including_none_transaction_id():
+    model = TransactionTableModel()
+    model.set_transactions([LOAN_INTEREST_ROW], is_loan=True)
+    assert model.transaction_at(0)[0] is None
+
+
+def test_sort_loan_transactions_by_type():
+    model = TransactionTableModel()
+    model.set_transactions([LOAN_PRINCIPAL_ROW, LOAN_INTEREST_ROW], is_loan=True)
+    model.sort(2, Qt.AscendingOrder)
+    assert [_data(model, r, 2) for r in range(2)] == ["Interest", "Principal"]
+
+
+def test_build_loan_transaction_rows_merges_principal_and_interest_sorted_by_date_desc():
+    transactions = [
+        (2000, date(2024, 1, 15), "NFCU", None, "Principal", Decimal("200.00"), None, None, None, None),
+        (2001, date(2024, 2, 15), "NFCU", None, "Principal", Decimal("202.00"), None, None, None, None),
+    ]
+    interest_payments = [
+        (date(2024, 2, 15), "NFCU", Decimal("28.00"), "USD"),
+        (date(2024, 1, 15), "NFCU", Decimal("30.00"), "USD"),
+    ]
+    rows = build_loan_transaction_rows(transactions, interest_payments)
+    assert [(row[1], row[10]) for row in rows] == [
+        (date(2024, 2, 15), "Principal"),
+        (date(2024, 2, 15), "Interest"),
+        (date(2024, 1, 15), "Principal"),
+        (date(2024, 1, 15), "Interest"),
+    ]
+
+
+def test_build_loan_transaction_rows_interest_rows_have_no_transaction_id():
+    rows = build_loan_transaction_rows([], [(date(2024, 1, 15), "NFCU", Decimal("30.00"), "USD")])
+    assert rows[0][0] is None
+    assert rows[0][10] == "Interest"
+    assert rows[0][5] == Decimal("30.00")
+    assert rows[0][2] == "NFCU"
+
+
+def test_build_loan_transaction_rows_preserves_principal_row_fields():
+    transactions = [
+        (2000, date(2024, 1, 15), "NFCU", None, "Principal", Decimal("200.00"), None, None, None, None),
+    ]
+    rows = build_loan_transaction_rows(transactions, [])
+    assert rows[0] == (
+        2000, date(2024, 1, 15), "NFCU", None, "Principal", Decimal("200.00"),
+        None, None, None, None, "Principal",
+    )
+
+
+def _identity_to_usd(_currency, amount):
+    return amount
+
+
+def test_compute_loan_totals_sums_principal_and_interest_separately():
+    transactions = [
+        (2000, date(2024, 1, 15), "NFCU", None, "Principal", Decimal("200.00"), None, None, None, None),
+        (2001, date(2024, 2, 15), "NFCU", None, "Principal", Decimal("202.00"), None, None, None, None),
+    ]
+    interest_payments = [
+        (date(2024, 1, 15), "NFCU", Decimal("30.00"), "USD"),
+        (date(2024, 2, 15), "NFCU", Decimal("28.00"), "USD"),
+    ]
+    assert compute_loan_totals(transactions, interest_payments, _identity_to_usd) == (
+        Decimal("402.00"), Decimal("58.00"),
+    )
+
+
+def test_compute_loan_totals_converts_each_interest_payment_by_its_own_currency():
+    # Interest legs come from the paying account, which may be denominated
+    # differently than the loan itself — each must be converted using its
+    # own currency, not the loan's.
+    interest_payments = [
+        (date(2024, 1, 15), "NFCU", Decimal("100.00"), "SEK"),
+        (date(2024, 2, 15), "NFCU", Decimal("28.00"), "USD"),
+    ]
+    to_usd = lambda currency, amount: amount / 10 if currency == "SEK" else amount
+    assert compute_loan_totals([], interest_payments, to_usd) == (
+        Decimal("0"), Decimal("38.00"),
+    )
+
+
+def test_compute_loan_totals_empty_returns_zero():
+    assert compute_loan_totals([], [], _identity_to_usd) == (Decimal("0"), Decimal("0"))
 
 
 def test_dictionary_list_model_shows_name_at_index():

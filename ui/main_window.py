@@ -32,14 +32,16 @@ from account_details_dialog import AccountDetailsDialog
 from add_account_dialog import AddAccountDialog
 from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
-from data import INVESTMENT_ACCOUNT_TYPE
+from data import INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
 from import_qfx_dialog import ImportQfxDialog
 from models import (
     AccountTableModel,
     TransactionTableModel,
     account_type_label,
+    build_loan_transaction_rows,
     compute_account_value_history,
+    compute_loan_totals,
     format_currency,
 )
 from navigation_history import NavigationHistory
@@ -408,6 +410,11 @@ class MainWindow(QMainWindow):
             account_row
         )
         transaction = self.transaction_model.transaction_at(row)
+        if transaction[0] is None:
+            self.statusBar().showMessage(
+                "Interest records are derived from another account and can't be edited here."
+            )
+            return
         dialog = AddRecordDialog(self._conn, account_id, account_type, transaction=transaction, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
             return
@@ -417,6 +424,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Record updated.")
 
     def _transaction_context_actions(self, row):
+        if self.transaction_model.transaction_at(row)[0] is None:
+            return []
         return [("Delete Record", partial(self._on_delete_record_clicked, row))]
 
     def _on_delete_record_clicked(self, row):
@@ -497,17 +506,35 @@ class MainWindow(QMainWindow):
             indexes[0].row()
         )
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
+        is_loan = account_type == LOAN_ACCOUNT_TYPE
         balance_label = "Value" if is_investment else "Balance"
         usd_balance = self.account_model.to_usd(currency, balance)
         try:
             transactions = data.list_transactions(self._conn, account_id)
+            if is_loan:
+                interest_payments = data.list_loan_interest_payments(self._conn, account_id)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to load transactions: {exc}")
             return
-        self.account_details_label.setText(
-            f"{name} ({account_type_label(account_type)}) — "
-            f"{balance_label}: {format_currency(usd_balance)} USD — "
-            f"{len(transactions)} record(s)"
-        )
-        self.transaction_model.set_transactions(transactions, is_investment=is_investment)
+        if is_loan:
+            display_rows = build_loan_transaction_rows(transactions, interest_payments)
+            principal_total, usd_interest = compute_loan_totals(
+                transactions, interest_payments, self.account_model.to_usd
+            )
+            usd_principal = self.account_model.to_usd(currency, principal_total)
+            self.account_details_label.setText(
+                f"{name} ({account_type_label(account_type)}) — "
+                f"{balance_label}: {format_currency(usd_balance)} USD — "
+                f"Total Principal Paid: {format_currency(usd_principal)} USD — "
+                f"Total Interest Paid: {format_currency(usd_interest)} USD — "
+                f"{len(display_rows)} record(s)"
+            )
+            self.transaction_model.set_transactions(display_rows, is_loan=True)
+        else:
+            self.account_details_label.setText(
+                f"{name} ({account_type_label(account_type)}) — "
+                f"{balance_label}: {format_currency(usd_balance)} USD — "
+                f"{len(transactions)} record(s)"
+            )
+            self.transaction_model.set_transactions(transactions, is_investment=is_investment)
         self.transaction_view.resizeColumnsToContents()

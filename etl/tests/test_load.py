@@ -12,11 +12,11 @@ def test_load_writes_expected_row_counts(tmp_path):
     db_path = tmp_path / "test.duckdb"
     summary = load(FIXTURES, db_path)
     assert summary == {
-        "accounts": 4,
+        "accounts": 6,
         "categories": 2,
         "payees": 2,
         "securities": 2,
-        "transactions": 8,
+        "transactions": 10,
     }
     assert db_path.exists()
 
@@ -51,3 +51,20 @@ def test_load_resolves_investment_transaction_details(tmp_path):
     finally:
         conn.close()
     assert row == ("Vanguard Total Stock Market Index", "1", Decimal("8.0"), Decimal("18.39"))
+
+
+def test_load_resolves_loan_interest_and_linked_account_fields(tmp_path):
+    db_path = tmp_path / "test.duckdb"
+    load(FIXTURES, db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        car_loan = conn.execute(
+            "SELECT interest_category_id FROM accounts WHERE account_id = 5"
+        ).fetchone()
+        principal = conn.execute(
+            "SELECT linked_account_id FROM transactions WHERE transaction_id = 3000"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert car_loan == (10,)
+    assert principal == (1,)

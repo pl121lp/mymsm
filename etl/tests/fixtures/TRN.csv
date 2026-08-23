@@ -1,12 +1,14 @@
-htrn,hacct,hcat,lHpay,dt,amt,mMemo,hsec,act
-1000,1,10,100,2024-01-05,-52.30,Weekly groceries,,
-1001,1,11,101,2024-01-01,-1200.00,January rent,,
-1002,1,999,100,2024-01-06,-10.00,Unknown category should be nulled,,
-1003,999,10,100,2024-01-07,-5.00,Unknown account should be skipped,,
-1004,N/A,10,100,2024-01-08,-1.00,Malformed account id should be skipped,,
-1005,1,10,100,2024-01-09,not-a-number,Malformed amount should be skipped,,
-2000,4,,,2024-02-01,147.12,,50,1
-2001,4,,,2024-02-15,64.62,,50,1
-2002,4,,,2024-02-20,-249.00,,50,2
-2003,4,,,2024-02-25,0.00,RSU grant,51,17
-2004,4,,,2024-02-26,5.00,Unknown security should be nulled,999,1
+htrn,hacct,hcat,lHpay,dt,amt,mMemo,hsec,act,hacctLink
+1000,1,10,100,2024-01-05,-52.30,Weekly groceries,,,
+1001,1,11,101,2024-01-01,-1200.00,January rent,,,
+1002,1,999,100,2024-01-06,-10.00,Unknown category should be nulled,,,
+1003,999,10,100,2024-01-07,-5.00,Unknown account should be skipped,,,
+1004,N/A,10,100,2024-01-08,-1.00,Malformed account id should be skipped,,,
+1005,1,10,100,2024-01-09,not-a-number,Malformed amount should be skipped,,,
+2000,4,,,2024-02-01,147.12,,50,1,
+2001,4,,,2024-02-15,64.62,,50,1,
+2002,4,,,2024-02-20,-249.00,,50,2,
+2003,4,,,2024-02-25,0.00,RSU grant,51,17,
+2004,4,,,2024-02-26,5.00,Unknown security should be nulled,999,1,
+3000,5,,100,2024-03-01,200.00,Principal,,,1
+3001,6,,100,2024-03-01,300.00,Principal,,,999

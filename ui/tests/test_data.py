@@ -7,6 +7,7 @@ from data import (
     list_categories,
     list_category_spending,
     list_category_transactions,
+    list_loan_interest_payments,
     list_payee_transactions,
     list_securities,
     list_security_history,
@@ -39,11 +40,11 @@ def test_list_accounts_only_closed_when_requested(conn):
 def test_list_accounts_orders_by_account_type_then_name(conn):
     conn.execute(
         "INSERT INTO accounts VALUES "
-        "(4, 'Roth IRA', '5', FALSE, 0.00, 'USD'), "
-        "(5, 'House', '3', FALSE, 500000.00, 'USD'), "
-        "(6, 'Mortgage', '6', FALSE, -300000.00, 'USD'), "
-        "(7, 'Visa', '1', FALSE, 0.00, 'USD'), "
-        "(8, 'Savings', '0', FALSE, 50.00, 'USD')"
+        "(4, 'Roth IRA', '5', FALSE, 0.00, 'USD', NULL), "
+        "(5, 'House', '3', FALSE, 500000.00, 'USD', NULL), "
+        "(6, 'Mortgage', '6', FALSE, -300000.00, 'USD', NULL), "
+        "(7, 'Visa', '1', FALSE, 0.00, 'USD', NULL), "
+        "(8, 'Savings', '0', FALSE, 50.00, 'USD', NULL)"
     )
     names_in_order = [row[1] for row in list_accounts(conn)]
     assert names_in_order == [
@@ -84,6 +85,50 @@ def test_list_transactions_unknown_account_returns_empty(conn):
     assert list_transactions(conn, account_id=999) == []
 
 
+def test_list_loan_interest_payments_matches_interest_leg_by_payee_and_date(loan_conn):
+    payments = list_loan_interest_payments(loan_conn, account_id=2)
+    assert (date(2024, 2, 15), "NFCU", Decimal("28.00"), "USD") in payments
+    assert (date(2024, 1, 15), "NFCU", Decimal("30.00"), "USD") in payments
+
+
+def test_list_loan_interest_payments_ignores_other_splits_same_payee_and_date(loan_conn):
+    # The Escrow split (txn 1001) shares payee/date with the January
+    # Principal leg but is under a different category than the loan's
+    # interest_category_id, so it must not be picked up as interest.
+    payments = list_loan_interest_payments(loan_conn, account_id=2)
+    assert Decimal("15.00") not in {amount for _, _, amount, _ in payments}
+
+
+def test_list_loan_interest_payments_skips_principal_legs_with_no_linked_account(loan_conn):
+    # txn 2002 (March) has no linked_account_id, so it can't be matched to
+    # any interest leg and should simply not appear.
+    payments = list_loan_interest_payments(loan_conn, account_id=2)
+    assert all(txn_date != date(2024, 3, 15) for txn_date, _, _, _ in payments)
+
+
+def test_list_loan_interest_payments_matches_when_both_legs_have_no_payee(loan_conn):
+    # txn 1003/2003 (April) both have payee_id NULL; SQL's NULL = NULL is
+    # never true, so the join must special-case this instead of dropping it.
+    payments = list_loan_interest_payments(loan_conn, account_id=2)
+    assert (date(2024, 4, 15), None, Decimal("25.00"), "USD") in payments
+
+
+def test_list_loan_interest_payments_returns_paying_accounts_currency(loan_conn):
+    # Foreign Loan (account 4, SEK) is paid from Foreign Checking (account
+    # 3, also SEK) — the interest amount's currency must reflect the paying
+    # account, not assume the loan's own currency.
+    payments = list_loan_interest_payments(loan_conn, account_id=4)
+    assert payments == [(date(2024, 1, 20), "NFCU", Decimal("50.00"), "SEK")]
+
+
+def test_list_loan_interest_payments_unknown_account_returns_empty(loan_conn):
+    assert list_loan_interest_payments(loan_conn, account_id=999) == []
+
+
+def test_list_loan_interest_payments_non_loan_account_returns_empty(loan_conn):
+    assert list_loan_interest_payments(loan_conn, account_id=1) == []
+
+
 def test_list_categories_returns_all_ordered_by_name(dict_conn):
     assert list_categories(dict_conn) == [
         (20, "Groceries"),
@@ -113,7 +158,7 @@ def test_list_category_spending_returns_categorized_transactions_across_accounts
 def test_list_category_spending_excludes_uncategorized_transactions(dict_conn):
     dict_conn.execute(
         "INSERT INTO transactions VALUES "
-        "(2000, 1, NULL, NULL, '2024-03-20', -10.00, 'misc', NULL, NULL, NULL, NULL)"
+        "(2000, 1, NULL, NULL, '2024-03-20', -10.00, 'misc', NULL, NULL, NULL, NULL, NULL)"
     )
     names = [row[1] for row in list_category_spending(dict_conn)]
     assert "misc" not in names

@@ -24,8 +24,10 @@ from transform import (
 
 def load(raw_dir: Path, db_path: Path) -> dict:
     currencies = build_currencies(raw_dir)
-    accounts = build_accounts(raw_dir, currencies)
     categories = build_categories(raw_dir)
+    accounts = build_accounts(
+        raw_dir, currencies, known_category_ids={c["category_id"] for c in categories}
+    )
     payees = build_payees(raw_dir)
     securities = build_securities(raw_dir)
     transactions = build_transactions(
@@ -43,18 +45,18 @@ def load(raw_dir: Path, db_path: Path) -> dict:
     try:
         apply_schema(conn)
         conn.executemany(
-            "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO categories VALUES (?, ?)",
+            [(c["category_id"], c["name"]) for c in categories],
+        )
+        conn.executemany(
+            "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     a["account_id"], a["name"], a["account_type"], a["is_closed"],
-                    a["opening_balance"], a["currency"],
+                    a["opening_balance"], a["currency"], a["interest_category_id"],
                 )
                 for a in accounts
             ],
-        )
-        conn.executemany(
-            "INSERT INTO categories VALUES (?, ?)",
-            [(c["category_id"], c["name"]) for c in categories],
         )
         conn.executemany(
             "INSERT INTO payees VALUES (?, ?)",
@@ -65,12 +67,12 @@ def load(raw_dir: Path, db_path: Path) -> dict:
             [(s["security_id"], s["name"]) for s in securities],
         )
         conn.executemany(
-            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     t["transaction_id"], t["account_id"], t["category_id"], t["payee_id"],
                     t["txn_date"], t["amount"], t["memo"], t["security_id"], t["activity"],
-                    t["quantity"], t["price"],
+                    t["quantity"], t["price"], t["linked_account_id"],
                 )
                 for t in transactions
             ],

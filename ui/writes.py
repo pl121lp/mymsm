@@ -29,7 +29,7 @@ def add_account(conn, name, account_type, currency, opening_balance):
     """Inserts a new account row (open by default). Returns the new account_id."""
     account_id = _next_id(conn, "accounts", "account_id")
     conn.execute(
-        "INSERT INTO accounts VALUES (?, ?, ?, FALSE, ?, ?)",
+        "INSERT INTO accounts VALUES (?, ?, ?, FALSE, ?, ?, NULL)",
         [account_id, name, account_type, opening_balance, currency],
     )
     return account_id
@@ -100,7 +100,7 @@ def add_transaction(
         )
         transaction_id = _next_id(conn, "transactions", "transaction_id")
         conn.execute(
-            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
             [
                 transaction_id, account_id, category_id, payee_id, txn_date, amount,
                 memo, security_id, activity, quantity, price,
@@ -127,7 +127,7 @@ def import_transactions(conn, account_id, records):
         for record in records:
             payee_id = _find_or_create(conn, "payees", "payee_id", record.name) if record.name else None
             conn.execute(
-                "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
                 [
                     transaction_id, account_id, None, payee_id, record.txn_date, record.amount,
                     record.memo or None, None, None, None, None,

@@ -7,6 +7,7 @@ import duckdb
 # affect share counts; other activity codes (transfers, grants, adjustments)
 # are shown in the transaction table but don't affect the computed value yet.
 INVESTMENT_ACCOUNT_TYPE = "5"
+LOAN_ACCOUNT_TYPE = "6"
 BUY_ACTIVITY = "1"
 SELL_ACTIVITY = "2"
 
@@ -94,6 +95,45 @@ def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[
         ORDER BY t.txn_date DESC
     """
     return conn.execute(query, [account_id]).fetchall()
+
+
+def list_loan_interest_payments(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[tuple]:
+    """Reconstructed interest payments for a loan account, as
+    (txn_date, payee, amount, currency) — currency is the *paying* account's,
+    which may differ from the loan account's own currency.
+
+    Money never posts interest to the loan account itself: a loan payment is
+    a split transaction whose Principal leg transfers into the loan account
+    (recorded here as a transaction with linked_account_id pointing at the
+    paying account) while its Interest leg stays on the paying account,
+    categorized under the loan's interest_category_id. This reconstructs the
+    payments by grouping this account's Principal legs by (paying account,
+    payee, date) and summing whatever the paying account posted under that
+    category for the same payee/date — filtering out any other same-day
+    split (e.g. escrow) under a different category. Payee is matched with
+    IS NOT DISTINCT FROM since both legs are commonly payee-less transfers,
+    and plain `=` never matches NULL against NULL. Amount is returned
+    positive (interest paid), most recent first.
+    """
+    query = """
+        WITH principal AS (
+            SELECT DISTINCT t.linked_account_id, t.payee_id, t.txn_date
+            FROM transactions t
+            WHERE t.account_id = ? AND t.linked_account_id IS NOT NULL
+        )
+        SELECT p.txn_date, py.name, -SUM(i.amount) AS interest_amount, a.currency
+        FROM principal p
+        JOIN transactions i
+            ON i.account_id = p.linked_account_id
+           AND i.payee_id IS NOT DISTINCT FROM p.payee_id
+           AND i.txn_date = p.txn_date
+           AND i.category_id = (SELECT interest_category_id FROM accounts WHERE account_id = ?)
+        JOIN accounts a ON a.account_id = p.linked_account_id
+        LEFT JOIN payees py ON py.payee_id = p.payee_id
+        GROUP BY p.txn_date, py.name, a.currency
+        ORDER BY p.txn_date DESC
+    """
+    return conn.execute(query, [account_id, account_id]).fetchall()
 
 
 def search_transactions(

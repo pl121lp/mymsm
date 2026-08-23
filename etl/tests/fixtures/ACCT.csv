@@ -1,5 +1,7 @@
-hacct,szFull,at,fClosed,amtOpen,hcrnc
-1,Checking,Bank,0,100.00,45
-2,Savings,Bank,0,0.00,38
-3,Old Card,Credit,1,,
-4,Brokerage,5,0,0.00,45
+hacct,szFull,at,fClosed,amtOpen,hcrnc,hcatInterest
+1,Checking,Bank,0,100.00,45,
+2,Savings,Bank,0,0.00,38,
+3,Old Card,Credit,1,,,
+4,Brokerage,5,0,0.00,45,
+5,Car Loan,6,0,-1000.00,45,10
+6,Old Mortgage,6,0,-2000.00,45,999

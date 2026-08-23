@@ -84,6 +84,49 @@ def compute_account_value_history(transactions, opening_balance, is_investment):
     return history
 
 
+def build_loan_transaction_rows(transactions, interest_payments):
+    """Merges a loan account's real (Principal) transactions with its
+    reconstructed (Interest) payments into TransactionTableModel's loan row
+    shape, sorted by date descending (Principal before Interest on ties).
+
+    `transactions` matches data.list_transactions()'s row shape;
+    `interest_payments` matches data.list_loan_interest_payments()'s
+    (txn_date, payee, amount) shape. Interest rows carry no transaction_id
+    since they aren't editable/deletable records of their own — they're
+    reconstructed from a different account's transactions.
+    """
+    rows = [
+        (transaction_id, txn_date, payee, category, memo, amount, None, None, None, None, "Principal")
+        for transaction_id, txn_date, payee, category, memo, amount, *_rest in transactions
+    ]
+    rows += [
+        (None, txn_date, payee, None, None, amount, None, None, None, None, "Interest")
+        for txn_date, payee, amount, _currency in interest_payments
+    ]
+    rows.sort(key=lambda row: row[1], reverse=True)
+    return rows
+
+
+def compute_loan_totals(transactions, interest_payments, to_usd):
+    """(total_principal, total_interest_usd) paid on a loan account.
+
+    total_principal is the sum of the loan account's own transaction
+    amounts (data.list_transactions() row shape, native currency) — since
+    balance = opening balance + running sum of those amounts, this equals
+    the lifetime amount financed. total_interest_usd sums the reconstructed
+    interest payments (data.list_loan_interest_payments() row shape),
+    converting each individually via to_usd(currency, amount): interest legs
+    come from the paying account, which may be denominated differently than
+    the loan itself.
+    """
+    total_principal = sum((row[5] for row in transactions), start=Decimal("0"))
+    total_interest = sum(
+        (to_usd(currency, amount) for _txn_date, _payee, amount, currency in interest_payments),
+        start=Decimal("0"),
+    )
+    return total_principal, total_interest
+
+
 def _add_months(base_date, months):
     month_index = base_date.month - 1 + months
     year = base_date.year + month_index // 12
@@ -245,21 +288,27 @@ class AccountTableModel(QAbstractTableModel):
 class TransactionTableModel(QAbstractTableModel):
     DEFAULT_COLUMNS = ["Date", "Payee", "Category", "Memo", "Amount"]
     INVESTMENT_COLUMNS = ["Date", "Investment", "Activity", "Quantity", "Price", "Amount", "Memo"]
+    LOAN_COLUMNS = ["Date", "Payee", "Type", "Memo", "Amount"]
 
     # Maps each column set's display columns to the underlying transaction
-    # tuple index (see data.py's list_transactions row shape).
+    # tuple index (see data.py's list_transactions row shape). Loan rows come
+    # from build_loan_transaction_rows(), which appends "kind" (Principal/
+    # Interest) as an 11th field.
     DEFAULT_FIELD_INDEXES = [1, 2, 3, 4, 5]
     INVESTMENT_FIELD_INDEXES = [1, 6, 7, 8, 9, 5, 4]
+    LOAN_FIELD_INDEXES = [1, 2, 10, 4, 5]
 
-    def __init__(self, transactions=None, parent=None, is_investment=False):
+    def __init__(self, transactions=None, parent=None, is_investment=False, is_loan=False):
         super().__init__(parent)
         self._transactions = transactions or []
         self._is_investment = is_investment
+        self._is_loan = is_loan
 
-    def set_transactions(self, transactions, is_investment=False):
+    def set_transactions(self, transactions, is_investment=False, is_loan=False):
         self.beginResetModel()
         self._transactions = transactions
         self._is_investment = is_investment
+        self._is_loan = is_loan
         self.endResetModel()
 
     def transaction_at(self, row):
@@ -267,11 +316,19 @@ class TransactionTableModel(QAbstractTableModel):
 
     @property
     def _columns(self):
-        return self.INVESTMENT_COLUMNS if self._is_investment else self.DEFAULT_COLUMNS
+        if self._is_investment:
+            return self.INVESTMENT_COLUMNS
+        if self._is_loan:
+            return self.LOAN_COLUMNS
+        return self.DEFAULT_COLUMNS
 
     @property
     def _field_indexes(self):
-        return self.INVESTMENT_FIELD_INDEXES if self._is_investment else self.DEFAULT_FIELD_INDEXES
+        if self._is_investment:
+            return self.INVESTMENT_FIELD_INDEXES
+        if self._is_loan:
+            return self.LOAN_FIELD_INDEXES
+        return self.DEFAULT_FIELD_INDEXES
 
     def sort(self, column, order=Qt.AscendingOrder):
         if not self._transactions:
@@ -298,9 +355,8 @@ class TransactionTableModel(QAbstractTableModel):
     def data(self, index, role=Qt.DisplayRole):
         if role != Qt.DisplayRole:
             return None
-        _, txn_date, payee, category, memo, amount, investment, activity, quantity, price = (
-            self._transactions[index.row()]
-        )
+        row = self._transactions[index.row()]
+        _, txn_date, payee, category, memo, amount, investment, activity, quantity, price = row[:10]
         if self._is_investment:
             values = [
                 txn_date.isoformat(),
@@ -310,6 +366,15 @@ class TransactionTableModel(QAbstractTableModel):
                 format_quantity(price),
                 f"{amount:.2f}",
                 memo or "",
+            ]
+        elif self._is_loan:
+            kind = row[10]
+            values = [
+                txn_date.isoformat(),
+                payee or "",
+                kind,
+                memo or "",
+                f"{amount:.2f}",
             ]
         else:
             values = [
