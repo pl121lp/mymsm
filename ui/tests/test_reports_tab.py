@@ -812,6 +812,29 @@ def test_selecting_house_account_adds_its_value_in_the_sale_year(qapp, dict_conn
     assert series.at(1).y() == pytest.approx(series.at(0).y() + 300000.00)
 
 
+def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.tax_rate_spinbox.setValue(0.0)
+    controls.inflation_rate_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.social_security_amount_2_spinbox.setValue(1000.0)
+    controls.social_security_start_year_2_spinbox.setValue(date.today().year + 1)
+    controls.update_button.click()
+
+    series = pane.chart_view.chart().series()[0]
+    assert series.at(1).y() == pytest.approx(series.at(0).y() + 1000.0)
+
+
 def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
     saved = {}

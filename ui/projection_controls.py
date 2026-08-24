@@ -36,6 +36,8 @@ def default_projection_values(today=None):
         "spending_after_retirement": 50000.0,
         "social_security_annual_amount": 20000.0,
         "social_security_start_year": today.year + 27,
+        "social_security_annual_amount_2": 0.0,
+        "social_security_start_year_2": today.year + 27,
         "house_sale_year": today.year + 20,
         "inheritance_amount": 0.0,
         "inheritance_year": today.year + 20,
@@ -76,6 +78,8 @@ class ProjectionControlsPanel(QWidget):
 
         self.social_security_amount_spinbox = dollar_spinbox(defaults["social_security_annual_amount"])
         self.social_security_start_year_spinbox = year_spinbox(defaults["social_security_start_year"])
+        self.social_security_amount_2_spinbox = dollar_spinbox(defaults["social_security_annual_amount_2"])
+        self.social_security_start_year_2_spinbox = year_spinbox(defaults["social_security_start_year_2"])
 
         self.medical_cost_spinbox = dollar_spinbox(defaults["medical_cost_after_retirement"])
         self.medicare_age_spinbox = QSpinBox()
@@ -111,21 +115,23 @@ class ProjectionControlsPanel(QWidget):
         income_form.addRow("Investment withdrawal tax rate:", self.withdrawal_tax_rate_spinbox)
 
         spending_form = QFormLayout()
-        spending_form.addRow("Spending before retirement:", self.spending_before_spinbox)
-        spending_form.addRow("Spending after retirement:", self.spending_after_spinbox)
+        spending_form.addRow("Spending before retirement (per year):", self.spending_before_spinbox)
+        spending_form.addRow("Spending after retirement (per year):", self.spending_after_spinbox)
         spending_form.addRow("Yearly medical costs (after retirement):", self.medical_cost_spinbox)
         spending_form.addRow("Medicare eligibility age:", self.medicare_age_spinbox)
 
         ss_form = QFormLayout()
-        ss_form.addRow("Social Security annual amount:", self.social_security_amount_spinbox)
-        ss_form.addRow("Social Security start year:", self.social_security_start_year_spinbox)
+        ss_form.addRow("Social Security annual amount (Person 1):", self.social_security_amount_spinbox)
+        ss_form.addRow("Social Security start year (Person 1):", self.social_security_start_year_spinbox)
+        ss_form.addRow("Social Security annual amount (Person 2):", self.social_security_amount_2_spinbox)
+        ss_form.addRow("Social Security start year (Person 2):", self.social_security_start_year_2_spinbox)
 
         house_form = QFormLayout()
         house_form.addRow("House account:", self.house_account_combo)
         house_form.addRow("House sale year:", self.house_sale_year_spinbox)
 
         inheritance_form = QFormLayout()
-        inheritance_form.addRow("Inheritance amount:", self.inheritance_amount_spinbox)
+        inheritance_form.addRow("Inheritance amount (one-time):", self.inheritance_amount_spinbox)
         inheritance_form.addRow("Inheritance year:", self.inheritance_year_spinbox)
 
         layout.addWidget(QLabel("<b>Timeline</b>"))
@@ -175,6 +181,8 @@ class ProjectionControlsPanel(QWidget):
             "medicare_age": self.medicare_age_spinbox.value(),
             "social_security_annual_amount": self.social_security_amount_spinbox.value(),
             "social_security_start_year": self.social_security_start_year_spinbox.value(),
+            "social_security_annual_amount_2": self.social_security_amount_2_spinbox.value(),
+            "social_security_start_year_2": self.social_security_start_year_2_spinbox.value(),
             "house_account_id": self.house_account_combo.currentData(),
             "house_sale_year": self.house_sale_year_spinbox.value(),
             "inheritance_amount": self.inheritance_amount_spinbox.value(),
@@ -199,6 +207,8 @@ class ProjectionControlsPanel(QWidget):
             "medicare_age": self.medicare_age_spinbox,
             "social_security_annual_amount": self.social_security_amount_spinbox,
             "social_security_start_year": self.social_security_start_year_spinbox,
+            "social_security_annual_amount_2": self.social_security_amount_2_spinbox,
+            "social_security_start_year_2": self.social_security_start_year_2_spinbox,
             "house_sale_year": self.house_sale_year_spinbox,
             "inheritance_amount": self.inheritance_amount_spinbox,
             "inheritance_year": self.inheritance_year_spinbox,

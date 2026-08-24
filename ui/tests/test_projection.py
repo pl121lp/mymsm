@@ -18,6 +18,8 @@ def _inputs(**overrides):
         spending_after_retirement=Decimal("0"),
         social_security_annual_amount=Decimal("0"),
         social_security_start_year=9999,
+        social_security_annual_amount_2=Decimal("0"),
+        social_security_start_year_2=9999,
         house_sale_value=Decimal("0"),
         house_sale_year=999999,
         inheritance_amount=Decimal("0"),
@@ -125,6 +127,26 @@ def test_social_security_starts_only_at_configured_year():
     assert by_year[2026].social_security == Decimal("500")
     assert by_year[2026].net_worth == Decimal("500")
     assert by_year[2027].net_worth == Decimal("1000")
+
+
+def test_second_social_security_person_starts_only_at_own_configured_year():
+    inputs = _inputs(
+        birth_year=1950,
+        end_year=2028,
+        retirement_age=200,
+        social_security_annual_amount=Decimal("500"),
+        social_security_start_year=2025,
+        social_security_annual_amount_2=Decimal("300"),
+        social_security_start_year_2=2027,
+    )
+
+    rows = compute_projection(inputs, current_year=2024)
+    by_year = {row.year: row for row in rows}
+
+    assert by_year[2025].social_security == Decimal("500")
+    assert by_year[2026].social_security == Decimal("500")
+    assert by_year[2027].social_security == Decimal("800")
+    assert by_year[2028].social_security == Decimal("800")
 
 
 def test_tax_applies_to_income_and_social_security_only():

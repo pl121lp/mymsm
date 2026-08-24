@@ -508,6 +508,8 @@ class ReportsPane(QWidget):
             spending_after_retirement=Decimal(str(values["spending_after_retirement"])),
             social_security_annual_amount=Decimal(str(values["social_security_annual_amount"])),
             social_security_start_year=values["social_security_start_year"],
+            social_security_annual_amount_2=Decimal(str(values["social_security_annual_amount_2"])),
+            social_security_start_year_2=values["social_security_start_year_2"],
             house_sale_value=house_sale_value,
             house_sale_year=values["house_sale_year"],
             inheritance_amount=Decimal(str(values["inheritance_amount"])),

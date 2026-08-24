@@ -24,6 +24,8 @@ class ProjectionInputs:
     spending_after_retirement: Decimal
     social_security_annual_amount: Decimal
     social_security_start_year: int
+    social_security_annual_amount_2: Decimal
+    social_security_start_year_2: int
     house_sale_value: Decimal
     house_sale_year: int
     inheritance_amount: Decimal
@@ -58,6 +60,10 @@ def compute_projection(
     separate untouched "investment value") at the before/after-retirement
     return rate on top of that year's net cash flow. net_worth is never
     floored at zero -- a shortfall keeps compounding as a negative balance.
+
+    Social Security supports two independent people/benefits, each with
+    its own inflation-adjusted amount and start year; the two are summed
+    into a single social_security total for tax and cash flow purposes.
 
     Medical costs (medical_cost_after_retirement, inflation-adjusted) are
     added to retirement spending only while age < medicare_age.
@@ -101,6 +107,10 @@ def compute_projection(
         social_security = (
             inputs.social_security_annual_amount * inflation_factor
             if year >= inputs.social_security_start_year
+            else zero
+        ) + (
+            inputs.social_security_annual_amount_2 * inflation_factor
+            if year >= inputs.social_security_start_year_2
             else zero
         )
         medical = (

@@ -20,6 +20,8 @@ def test_default_projection_values_are_relative_to_today():
         "spending_after_retirement": 50000.0,
         "social_security_annual_amount": 20000.0,
         "social_security_start_year": 2051,
+        "social_security_annual_amount_2": 0.0,
+        "social_security_start_year_2": 2051,
         "house_sale_year": 2044,
         "inheritance_amount": 0.0,
         "inheritance_year": 2044,
@@ -45,6 +47,8 @@ def test_panel_initializes_widgets_from_defaults(qapp):
     assert panel.spending_after_spinbox.value() == pytest.approx(50000.0)
     assert panel.social_security_amount_spinbox.value() == pytest.approx(20000.0)
     assert panel.social_security_start_year_spinbox.value() == 2051
+    assert panel.social_security_amount_2_spinbox.value() == pytest.approx(0.0)
+    assert panel.social_security_start_year_2_spinbox.value() == 2051
     assert panel.house_sale_year_spinbox.value() == 2044
     assert panel.inheritance_amount_spinbox.value() == pytest.approx(0.0)
     assert panel.inheritance_year_spinbox.value() == 2044
@@ -115,6 +119,21 @@ def test_values_and_set_values_round_trip_new_fields(qapp):
     assert values["medical_cost_after_retirement"] == pytest.approx(12000.0)
     assert values["medicare_age"] == 67
     assert values["withdrawal_tax_rate"] == pytest.approx(18.5)
+
+
+def test_values_and_set_values_round_trip_second_social_security_person(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+
+    panel.set_values(
+        {
+            "social_security_annual_amount_2": 15000.0,
+            "social_security_start_year_2": 2048,
+        }
+    )
+    values = panel.values()
+
+    assert values["social_security_annual_amount_2"] == pytest.approx(15000.0)
+    assert values["social_security_start_year_2"] == 2048
 
 
 def test_set_values_updates_only_the_given_keys(qapp):
