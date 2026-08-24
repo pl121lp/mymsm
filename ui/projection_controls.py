@@ -18,6 +18,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from form_controls import dollar_spinbox, percent_spinbox, year_spinbox
+
 
 def default_projection_values(today=None):
     """Built-in defaults for a first-time (no saved settings) load."""
@@ -44,32 +46,6 @@ def default_projection_values(today=None):
     }
 
 
-def _year_spinbox(value):
-    spinbox = QSpinBox()
-    spinbox.setRange(1900, 2200)
-    spinbox.setValue(value)
-    return spinbox
-
-
-def _percent_spinbox(value):
-    spinbox = QDoubleSpinBox()
-    spinbox.setRange(-20.0, 100.0)
-    spinbox.setDecimals(2)
-    spinbox.setSuffix("%")
-    spinbox.setValue(value)
-    return spinbox
-
-
-def _dollar_spinbox(value):
-    spinbox = QDoubleSpinBox()
-    spinbox.setRange(0.0, 100_000_000.0)
-    spinbox.setDecimals(2)
-    spinbox.setSingleStep(1000.0)
-    spinbox.setPrefix("$")
-    spinbox.setValue(value)
-    return spinbox
-
-
 class ProjectionControlsPanel(QWidget):
     updated = Signal()
 
@@ -77,42 +53,42 @@ class ProjectionControlsPanel(QWidget):
         super().__init__(parent)
         defaults = default_projection_values(today)
 
-        self.birth_year_spinbox = _year_spinbox(defaults["birth_year"])
-        self.end_year_spinbox = _year_spinbox(defaults["end_year"])
+        self.birth_year_spinbox = year_spinbox(defaults["birth_year"])
+        self.end_year_spinbox = year_spinbox(defaults["end_year"])
         self.retirement_age_spinbox = QSpinBox()
         self.retirement_age_spinbox.setRange(1, 120)
         self.retirement_age_spinbox.setValue(defaults["retirement_age"])
-        self.starting_investment_value_spinbox = _dollar_spinbox(0.0)
+        self.starting_investment_value_spinbox = dollar_spinbox(0.0)
         self.starting_investment_value_spinbox.setEnabled(False)
         self.starting_investment_value_spinbox.setToolTip(
             "Derived automatically from your Investment accounts; not editable."
         )
 
-        self.return_rate_before_spinbox = _percent_spinbox(defaults["return_rate_before_retirement"])
-        self.return_rate_after_spinbox = _percent_spinbox(defaults["return_rate_after_retirement"])
+        self.return_rate_before_spinbox = percent_spinbox(defaults["return_rate_before_retirement"])
+        self.return_rate_after_spinbox = percent_spinbox(defaults["return_rate_after_retirement"])
 
-        self.annual_income_spinbox = _dollar_spinbox(defaults["annual_income"])
-        self.tax_rate_spinbox = _percent_spinbox(defaults["tax_rate"])
-        self.inflation_rate_spinbox = _percent_spinbox(defaults["inflation_rate"])
-        self.withdrawal_tax_rate_spinbox = _percent_spinbox(defaults["withdrawal_tax_rate"])
+        self.annual_income_spinbox = dollar_spinbox(defaults["annual_income"])
+        self.tax_rate_spinbox = percent_spinbox(defaults["tax_rate"])
+        self.inflation_rate_spinbox = percent_spinbox(defaults["inflation_rate"])
+        self.withdrawal_tax_rate_spinbox = percent_spinbox(defaults["withdrawal_tax_rate"])
 
-        self.spending_before_spinbox = _dollar_spinbox(defaults["spending_before_retirement"])
-        self.spending_after_spinbox = _dollar_spinbox(defaults["spending_after_retirement"])
+        self.spending_before_spinbox = dollar_spinbox(defaults["spending_before_retirement"])
+        self.spending_after_spinbox = dollar_spinbox(defaults["spending_after_retirement"])
 
-        self.social_security_amount_spinbox = _dollar_spinbox(defaults["social_security_annual_amount"])
-        self.social_security_start_year_spinbox = _year_spinbox(defaults["social_security_start_year"])
+        self.social_security_amount_spinbox = dollar_spinbox(defaults["social_security_annual_amount"])
+        self.social_security_start_year_spinbox = year_spinbox(defaults["social_security_start_year"])
 
-        self.medical_cost_spinbox = _dollar_spinbox(defaults["medical_cost_after_retirement"])
+        self.medical_cost_spinbox = dollar_spinbox(defaults["medical_cost_after_retirement"])
         self.medicare_age_spinbox = QSpinBox()
         self.medicare_age_spinbox.setRange(1, 120)
         self.medicare_age_spinbox.setValue(defaults["medicare_age"])
 
         self.house_account_combo = QComboBox()
         self.house_account_combo.addItem("None", None)
-        self.house_sale_year_spinbox = _year_spinbox(defaults["house_sale_year"])
+        self.house_sale_year_spinbox = year_spinbox(defaults["house_sale_year"])
 
-        self.inheritance_amount_spinbox = _dollar_spinbox(defaults["inheritance_amount"])
-        self.inheritance_year_spinbox = _year_spinbox(defaults["inheritance_year"])
+        self.inheritance_amount_spinbox = dollar_spinbox(defaults["inheritance_amount"])
+        self.inheritance_year_spinbox = year_spinbox(defaults["inheritance_year"])
 
         self.update_button = QPushButton("Update")
         self.update_button.clicked.connect(self.updated.emit)
