@@ -33,11 +33,13 @@ from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_co
 from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
 from college_tuition_settings import load_college_tuition_settings, save_college_tuition_settings
 from models import (
+    AssetsAndInvestmentsTableModel,
     DictionaryListModel,
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
     SpendingByCategoryTableModel,
     compute_account_value_history,
+    compute_assets_and_investments,
     compute_income_by_category,
     compute_investment_analysis,
     compute_net_worth_series,
@@ -55,6 +57,7 @@ INCOME_BY_CATEGORY_REPORT_ID = "income_by_category"
 INVESTMENT_ANALYSIS_REPORT_ID = "investment_analysis"
 NET_WORTH_PROJECTION_REPORT_ID = "net_worth_projection"
 COLLEGE_TUITION_PROJECTION_REPORT_ID = "college_tuition_projection"
+ASSETS_AND_INVESTMENTS_REPORT_ID = "assets_and_investments"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
@@ -62,6 +65,7 @@ REPORTS = [
     (INVESTMENT_ANALYSIS_REPORT_ID, "Investment analysis"),
     (NET_WORTH_PROJECTION_REPORT_ID, "Net Worth Projection"),
     (COLLEGE_TUITION_PROJECTION_REPORT_ID, "College Tuition Projection"),
+    (ASSETS_AND_INVESTMENTS_REPORT_ID, "Assets and investments"),
 ]
 
 
@@ -146,6 +150,13 @@ class ReportsPane(QWidget):
         )
         self.college_tuition_controls_scroll_area.setVisible(False)
 
+        self.assets_investments_table_model = AssetsAndInvestmentsTableModel()
+        self.assets_investments_table_view = QTableView()
+        self.assets_investments_table_view.setModel(self.assets_investments_table_model)
+        self.assets_investments_table_view.horizontalHeader().setStretchLastSection(True)
+        self.assets_investments_table_view.setVisible(False)
+        enable_cell_copy(self.assets_investments_table_view)
+
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
                 "compute": compute_spending_by_category,
@@ -200,6 +211,7 @@ class ReportsPane(QWidget):
         chart_layout.addWidget(self.chart_view, 1)
         chart_layout.addWidget(self.category_table_view)
         chart_layout.addWidget(self.investment_table_view)
+        chart_layout.addWidget(self.assets_investments_table_view)
         chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.projection_controls_scroll_area, 1)
@@ -224,6 +236,7 @@ class ReportsPane(QWidget):
             self.spending_table_model.set_categories([])
             self.income_table_model.set_categories([])
             self.investment_table_model.set_investments([])
+            self.assets_investments_table_model.set_rows([])
             self.range_label.setText("")
             self.view_selector_row.setVisible(False)
             self.investment_controls_row.setVisible(False)
@@ -236,6 +249,7 @@ class ReportsPane(QWidget):
         is_investment_report = report_id == INVESTMENT_ANALYSIS_REPORT_ID
         is_projection_report = report_id == NET_WORTH_PROJECTION_REPORT_ID
         is_college_tuition_report = report_id == COLLEGE_TUITION_PROJECTION_REPORT_ID
+        is_assets_investments_report = report_id == ASSETS_AND_INVESTMENTS_REPORT_ID
         self.view_selector_row.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
@@ -251,8 +265,13 @@ class ReportsPane(QWidget):
         self.investment_controls_row.setVisible(is_investment_report)
         self.projection_controls_scroll_area.setVisible(is_projection_report)
         self.college_tuition_controls_scroll_area.setVisible(is_college_tuition_report)
-        self.range_controls_row.setVisible(not is_projection_report and not is_college_tuition_report)
-        self.range_label.setVisible(not is_projection_report and not is_college_tuition_report)
+        self.assets_investments_table_view.setVisible(is_assets_investments_report)
+        self.range_controls_row.setVisible(
+            not is_projection_report and not is_college_tuition_report and not is_assets_investments_report
+        )
+        self.range_label.setVisible(
+            not is_projection_report and not is_college_tuition_report and not is_assets_investments_report
+        )
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
         elif is_category_report:
@@ -263,6 +282,8 @@ class ReportsPane(QWidget):
             self._load_projection_report()
         elif is_college_tuition_report:
             self._load_college_tuition_report()
+        elif is_assets_investments_report:
+            self._load_assets_and_investments_report()
 
     def _on_view_mode_changed(self):
         if self._active_report_id not in self._category_reports:
@@ -562,6 +583,15 @@ class ReportsPane(QWidget):
         ]
         chart = build_line_chart("College Tuition Projection (USD)", series, mark_zero=True)
         self.chart_view.setChart(chart)
+
+    def _load_assets_and_investments_report(self):
+        try:
+            accounts = data.list_accounts(self._conn, include_closed=False)
+        except Exception as exc:
+            self._report_error(f"Failed to load assets and investments report: {exc}")
+            return
+        rows = compute_assets_and_investments(accounts, self._to_usd)
+        self.assets_investments_table_model.set_rows(rows)
 
     def _on_custom_investments_clicked(self):
         all_names = sorted({name for name, _txn_date, _price in self._investment_prices})

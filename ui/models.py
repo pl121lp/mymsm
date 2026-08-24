@@ -4,8 +4,9 @@ import calendar
 from decimal import Decimal
 
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
+from PySide6.QtGui import QFont
 
-from data import BUY_ACTIVITY, SELL_ACTIVITY
+from data import ASSET_ACCOUNT_TYPE, BUY_ACTIVITY, INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE, SELL_ACTIVITY
 
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
@@ -309,6 +310,90 @@ class InvestmentAnalysisTableModel(QAbstractTableModel):
             f"{first_date.isoformat()} to {last_date.isoformat()}",
         ]
         return values[index.column()]
+
+
+def compute_assets_and_investments(accounts, to_usd):
+    """Report rows (USD) grouping open accounts into investments, assets,
+    and loans/liabilities, each followed by its subtotal, ending with the
+    overall total balance (assets + investments - loans).
+
+    accounts is data.list_accounts()-style rows: (account_id, name,
+    account_type, currency, balance, is_closed). Loan balances are stored
+    negative (debt owed); shown here as a positive value that is subtracted
+    from the total.
+
+    Returns a list of (label, value, emphasized) rows suitable for
+    AssetsAndInvestmentsTableModel.set_rows(); value is None for section
+    header rows.
+    """
+    investments = []
+    assets = []
+    loans = []
+    for _account_id, name, account_type, currency, balance, _is_closed in accounts:
+        usd_value = to_usd(currency, balance)
+        if account_type == INVESTMENT_ACCOUNT_TYPE:
+            investments.append((name, usd_value))
+        elif account_type == ASSET_ACCOUNT_TYPE:
+            assets.append((name, usd_value))
+        elif account_type == LOAN_ACCOUNT_TYPE:
+            loans.append((name, -usd_value))
+
+    investments.sort(key=lambda row: row[0])
+    assets.sort(key=lambda row: row[0])
+    loans.sort(key=lambda row: row[0])
+
+    investment_total = sum((value for _name, value in investments), start=Decimal("0"))
+    asset_total = sum((value for _name, value in assets), start=Decimal("0"))
+    loan_total = sum((value for _name, value in loans), start=Decimal("0"))
+    total_balance = investment_total + asset_total - loan_total
+
+    rows = [("Investments", None, True)]
+    rows += [(name, value, False) for name, value in investments]
+    rows.append(("Total Investments", investment_total, True))
+    rows.append(("Assets", None, True))
+    rows += [(name, value, False) for name, value in assets]
+    rows.append(("Total Assets", asset_total, True))
+    rows.append(("Loans / Liabilities", None, True))
+    rows += [(name, value, False) for name, value in loans]
+    rows.append(("Total Loans", loan_total, True))
+    rows.append(("Total Balance", total_balance, True))
+    return rows
+
+
+class AssetsAndInvestmentsTableModel(QAbstractTableModel):
+    COLUMNS = ["Account", "Value (USD)"]
+
+    def __init__(self, rows=None, parent=None):
+        super().__init__(parent)
+        self._rows = rows or []
+
+    def set_rows(self, rows):
+        self.beginResetModel()
+        self._rows = rows
+        self.endResetModel()
+
+    def rowCount(self, parent=None):
+        return len(self._rows)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        label, value, emphasized = self._rows[index.row()]
+        if role == Qt.DisplayRole:
+            if index.column() == 0:
+                return label
+            return format_currency(value) if value is not None else ""
+        if role == Qt.FontRole and emphasized:
+            font = QFont()
+            font.setBold(True)
+            return font
+        return None
 
 
 class AccountTableModel(QAbstractTableModel):

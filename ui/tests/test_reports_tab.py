@@ -1003,3 +1003,100 @@ def test_persisted_settings_round_trip_through_college_tuition_panel(qapp, dict_
 
     assert pane2.college_tuition_controls.contribution_end_year_spinbox.value() == 2050
     assert pane2.college_tuition_controls.values()["selected_account_ids"] == [3]
+
+
+def _select_assets_and_investments_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(6, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _add_asset_and_loan_accounts(conn):
+    conn.execute(
+        "INSERT INTO accounts VALUES "
+        "(5, 'House', '3', FALSE, 500000.00, 'USD', NULL), "
+        "(6, 'Car Loan', '6', FALSE, -15000.00, 'USD', NULL)"
+    )
+
+
+def test_reports_list_shows_assets_and_investments_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.rowCount() == len(REPORTS)
+    assert pane.list_model.data(pane.list_model.index(6, 0)) == "Assets and investments"
+
+
+def test_selecting_assets_and_investments_report_shows_table_hides_others(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert pane.chart_view.isVisible()
+
+    _select_assets_and_investments_report(pane)
+    assert pane.assets_investments_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    assert not pane.investment_table_view.isVisible()
+    assert not pane.view_selector_row.isVisible()
+    assert not pane.investment_controls_row.isVisible()
+    assert not pane.range_controls_row.isVisible()
+    assert not pane.range_label.isVisible()
+
+
+def test_assets_and_investments_report_lists_accounts_by_section_with_totals(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_assets_and_investments_report(pane)
+
+    view = pane.assets_investments_table_view
+    rows = [
+        (_table_cell(view, row, 0), _table_cell(view, row, 1))
+        for row in range(view.model().rowCount())
+    ]
+    assert rows == [
+        ("Investments", ""),
+        ("Brokerage A", "226.30"),
+        ("Brokerage B", "200.00"),
+        ("Total Investments", "426.30"),
+        ("Assets", ""),
+        ("House", "500,000.00"),
+        ("Total Assets", "500,000.00"),
+        ("Loans / Liabilities", ""),
+        ("Car Loan", "15,000.00"),
+        ("Total Loans", "15,000.00"),
+        ("Total Balance", "485,426.30"),
+    ]
+
+
+def test_assets_and_investments_report_bolds_headers_and_totals(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_assets_and_investments_report(pane)
+
+    model = pane.assets_investments_table_model
+    assert model.data(model.index(0, 0), Qt.FontRole).bold()
+    assert model.data(model.index(3, 0), Qt.FontRole).bold()
+    assert model.data(model.index(1, 0), Qt.FontRole) is None
+
+
+def test_assets_and_investments_report_omits_closed_accounts(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    dict_conn.execute("UPDATE accounts SET is_closed = TRUE WHERE account_id = 6")
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_assets_and_investments_report(pane)
+
+    view = pane.assets_investments_table_view
+    labels = [_table_cell(view, row, 0) for row in range(view.model().rowCount())]
+    assert "Car Loan" not in labels
+    assert "Total Loans" in labels
+
+
+def test_selecting_other_report_after_assets_and_investments_hides_its_table(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_assets_and_investments_report(pane)
+    _select_net_worth_report(pane)
+
+    assert not pane.assets_investments_table_view.isVisible()
+    assert pane.range_controls_row.isVisible()
+    assert pane.range_label.isVisible()
