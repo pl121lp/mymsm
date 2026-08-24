@@ -922,6 +922,47 @@ def test_selecting_college_tuition_report_renders_a_fund_balance_line_series(qap
     assert fund_series.at(0).y() == pytest.approx(426.30)
 
 
+def test_clicking_update_in_college_tuition_panel_rerenders_chart_from_new_inputs(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_college_tuition_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_college_tuition_report(pane)
+
+    controls = pane.college_tuition_controls
+    controls.annual_return_rate_spinbox.setValue(0.0)
+    controls.contribution_per_quarter_spinbox.setValue(0.0)
+
+    today = date.today()
+    start_year = today.year + 5
+    tuition_per_quarter = 1000.0
+    housing_per_quarter = 500.0
+    controls.person1_start_year_spinbox.setValue(start_year)
+    controls.person1_end_year_spinbox.setValue(start_year)
+    controls.person1_tuition_per_quarter_spinbox.setValue(tuition_per_quarter)
+    controls.person1_housing_per_quarter_spinbox.setValue(housing_per_quarter)
+
+    # start_year after end_year keeps person2 out of every quarter of the projection.
+    controls.person2_start_year_spinbox.setValue(2200)
+    controls.person2_end_year_spinbox.setValue(1900)
+    controls.person2_tuition_per_quarter_spinbox.setValue(0.0)
+    controls.person2_housing_per_quarter_spinbox.setValue(0.0)
+
+    controls.update_button.click()
+
+    current_quarter = (today.month - 1) // 3 + 1
+    # Row indices are a straight quarter count from (today.year, current_quarter);
+    # mirrors the indexing compute_college_tuition_projection itself uses.
+    index_before_active_year = (start_year - 1 - today.year) * 4 + (4 - current_quarter)
+    index_end_of_active_year = (start_year - today.year) * 4 + (4 - current_quarter)
+
+    fund_series = pane.chart_view.chart().series()[0]
+    before_value = fund_series.at(index_before_active_year).y()
+    end_value = fund_series.at(index_end_of_active_year).y()
+
+    assert end_value == pytest.approx(
+        before_value - 4 * (tuition_per_quarter + housing_per_quarter)
+    )
+
+
 def test_clicking_update_in_college_tuition_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_college_tuition_settings", lambda: {})
     saved = {}
