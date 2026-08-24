@@ -29,6 +29,9 @@ from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
 from charts import build_bar_chart, build_line_chart, build_pie_chart
 from data import ASSET_ACCOUNT_TYPE, INVESTMENT_ACCOUNT_TYPE
+from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_college_tuition_projection
+from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
+from college_tuition_settings import load_college_tuition_settings, save_college_tuition_settings
 from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
@@ -41,9 +44,6 @@ from models import (
     compute_spending_by_category,
     generate_sample_dates,
 )
-from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_college_tuition_projection
-from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
-from college_tuition_settings import load_college_tuition_settings, save_college_tuition_settings
 from projection import ProjectionInputs, compute_projection
 from projection_controls import ProjectionControlsPanel, default_projection_values
 from projection_settings import load_projection_settings, save_projection_settings

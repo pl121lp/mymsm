@@ -9,7 +9,6 @@ from datetime import date
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
     QComboBox,
-    QDoubleSpinBox,
     QFormLayout,
     QLabel,
     QPushButton,
