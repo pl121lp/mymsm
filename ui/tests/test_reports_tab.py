@@ -6,6 +6,10 @@ from PySide6.QtCore import QDate, QItemSelectionModel, Qt
 from PySide6.QtWidgets import QDialog, QScrollArea, QSizePolicy
 
 import reports_tab
+from college_tuition_settings import (
+    load_college_tuition_settings as _real_load_college_tuition_settings,
+    save_college_tuition_settings as _real_save_college_tuition_settings,
+)
 from projection_settings import (
     load_projection_settings as _real_load_projection_settings,
     save_projection_settings as _real_save_projection_settings,
@@ -34,6 +38,12 @@ def _select_income_report(pane):
 def _select_investment_report(pane):
     pane.list_view.selectionModel().select(
         pane.list_model.index(3, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _select_college_tuition_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(5, 0), QItemSelectionModel.ClearAndSelect
     )
 
 
@@ -843,3 +853,112 @@ def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatc
 
     assert pane2.projection_controls.retirement_age_spinbox.value() == 70
     assert pane2.projection_controls.house_account_combo.currentData() == 5
+
+
+def test_reports_list_shows_college_tuition_projection_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.rowCount() == len(REPORTS)
+    assert pane.list_model.data(pane.list_model.index(5, 0)) == "College Tuition Projection"
+
+
+def test_selecting_college_tuition_report_shows_controls_and_chart_hides_others(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_college_tuition_report(pane)
+
+    assert pane.college_tuition_controls_scroll_area.isVisible()
+    assert pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    assert not pane.investment_table_view.isVisible()
+    assert not pane.investment_controls_row.isVisible()
+    assert not pane.range_controls_row.isVisible()
+    assert not pane.range_label.isVisible()
+
+
+def test_selecting_other_report_after_college_tuition_hides_its_controls(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_college_tuition_report(pane)
+    _select_net_worth_report(pane)
+
+    assert not pane.college_tuition_controls_scroll_area.isVisible()
+    assert pane.range_controls_row.isVisible()
+    assert pane.range_label.isVisible()
+
+
+def test_selecting_college_tuition_report_autofills_starting_fund_value(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_college_tuition_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_college_tuition_report(pane)
+
+    assert pane.college_tuition_controls.starting_fund_value_spinbox.value() == pytest.approx(426.30)
+
+
+def test_selecting_college_tuition_report_loads_persisted_settings(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab, "load_college_tuition_settings",
+        lambda: {"contribution_end_year": 2050, "annual_return_rate": 4.5},
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_college_tuition_report(pane)
+
+    assert pane.college_tuition_controls.contribution_end_year_spinbox.value() == 2050
+    assert pane.college_tuition_controls.annual_return_rate_spinbox.value() == pytest.approx(4.5)
+
+
+def test_selecting_college_tuition_report_renders_a_fund_balance_line_series(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_college_tuition_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_college_tuition_report(pane)
+
+    chart = pane.chart_view.chart()
+    series = chart.series()
+    assert [s.name() for s in series if s.name()] == ["College Fund Balance"]
+    fund_series = series[0]
+    assert fund_series.count() > 1
+    assert fund_series.at(0).y() == pytest.approx(426.30)
+
+
+def test_clicking_update_in_college_tuition_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_college_tuition_settings", lambda: {})
+    saved = {}
+    monkeypatch.setattr(reports_tab, "save_college_tuition_settings", saved.update)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_college_tuition_report(pane)
+
+    pane.college_tuition_controls.contribution_end_year_spinbox.setValue(2050)
+    pane.college_tuition_controls.update_button.click()
+
+    assert saved["contribution_end_year"] == 2050
+    assert "starting_fund_value" not in saved
+
+
+def test_persisted_settings_round_trip_through_college_tuition_panel(qapp, dict_conn, monkeypatch, tmp_path):
+    settings_path = tmp_path / "college_tuition_settings.json"
+    monkeypatch.setattr(
+        reports_tab, "load_college_tuition_settings",
+        functools.partial(_real_load_college_tuition_settings, path=settings_path),
+    )
+    monkeypatch.setattr(
+        reports_tab, "save_college_tuition_settings",
+        functools.partial(_real_save_college_tuition_settings, path=settings_path),
+    )
+
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_college_tuition_report(pane)
+    pane.college_tuition_controls.contribution_end_year_spinbox.setValue(2050)
+    pane.college_tuition_controls.set_values({"selected_account_ids": [3]})
+    pane.college_tuition_controls.update_button.click()
+
+    pane2 = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    monkeypatch.setattr(
+        reports_tab, "load_college_tuition_settings",
+        functools.partial(_real_load_college_tuition_settings, path=settings_path),
+    )
+    _select_college_tuition_report(pane2)
+
+    assert pane2.college_tuition_controls.contribution_end_year_spinbox.value() == 2050
+    assert pane2.college_tuition_controls.values()["selected_account_ids"] == [3]

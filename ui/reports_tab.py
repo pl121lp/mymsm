@@ -41,6 +41,9 @@ from models import (
     compute_spending_by_category,
     generate_sample_dates,
 )
+from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_college_tuition_projection
+from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
+from college_tuition_settings import load_college_tuition_settings, save_college_tuition_settings
 from projection import ProjectionInputs, compute_projection
 from projection_controls import ProjectionControlsPanel, default_projection_values
 from projection_settings import load_projection_settings, save_projection_settings
@@ -51,12 +54,14 @@ SPENDING_BY_CATEGORY_REPORT_ID = "spending_by_category"
 INCOME_BY_CATEGORY_REPORT_ID = "income_by_category"
 INVESTMENT_ANALYSIS_REPORT_ID = "investment_analysis"
 NET_WORTH_PROJECTION_REPORT_ID = "net_worth_projection"
+COLLEGE_TUITION_PROJECTION_REPORT_ID = "college_tuition_projection"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
     (INCOME_BY_CATEGORY_REPORT_ID, "Income by category"),
     (INVESTMENT_ANALYSIS_REPORT_ID, "Investment analysis"),
     (NET_WORTH_PROJECTION_REPORT_ID, "Net Worth Projection"),
+    (COLLEGE_TUITION_PROJECTION_REPORT_ID, "College Tuition Projection"),
 ]
 
 
@@ -130,6 +135,17 @@ class ReportsPane(QWidget):
         )
         self.projection_controls_scroll_area.setVisible(False)
 
+        self.college_tuition_controls = CollegeTuitionControlsPanel()
+        self.college_tuition_controls.updated.connect(self._on_college_tuition_updated)
+
+        self.college_tuition_controls_scroll_area = QScrollArea()
+        self.college_tuition_controls_scroll_area.setWidgetResizable(True)
+        self.college_tuition_controls_scroll_area.setWidget(self.college_tuition_controls)
+        self.college_tuition_controls_scroll_area.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Ignored
+        )
+        self.college_tuition_controls_scroll_area.setVisible(False)
+
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
                 "compute": compute_spending_by_category,
@@ -187,6 +203,7 @@ class ReportsPane(QWidget):
         chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.projection_controls_scroll_area, 1)
+        chart_layout.addWidget(self.college_tuition_controls_scroll_area, 1)
         chart_layout.addWidget(self.range_label)
         chart_layout.addWidget(self.range_controls_row)
 
@@ -211,25 +228,31 @@ class ReportsPane(QWidget):
             self.view_selector_row.setVisible(False)
             self.investment_controls_row.setVisible(False)
             self.projection_controls_scroll_area.setVisible(False)
+            self.college_tuition_controls_scroll_area.setVisible(False)
             return
         report_id = self.list_model.id_at(indexes[0].row())
         self._active_report_id = report_id
         is_category_report = report_id in self._category_reports
         is_investment_report = report_id == INVESTMENT_ANALYSIS_REPORT_ID
         is_projection_report = report_id == NET_WORTH_PROJECTION_REPORT_ID
+        is_college_tuition_report = report_id == COLLEGE_TUITION_PROJECTION_REPORT_ID
         self.view_selector_row.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
             self.view_selector.setCurrentIndex(0)
             self.view_selector.blockSignals(False)
             self.category_table_view.setModel(self._category_reports[report_id]["model"])
-        self.chart_view.setVisible(report_id in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID))
+        self.chart_view.setVisible(
+            report_id
+            in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID, COLLEGE_TUITION_PROJECTION_REPORT_ID)
+        )
         self.category_table_view.setVisible(is_category_report)
         self.investment_table_view.setVisible(is_investment_report)
         self.investment_controls_row.setVisible(is_investment_report)
         self.projection_controls_scroll_area.setVisible(is_projection_report)
-        self.range_controls_row.setVisible(not is_projection_report)
-        self.range_label.setVisible(not is_projection_report)
+        self.college_tuition_controls_scroll_area.setVisible(is_college_tuition_report)
+        self.range_controls_row.setVisible(not is_projection_report and not is_college_tuition_report)
+        self.range_label.setVisible(not is_projection_report and not is_college_tuition_report)
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
         elif is_category_report:
@@ -238,6 +261,8 @@ class ReportsPane(QWidget):
             self._load_investment_report()
         elif is_projection_report:
             self._load_projection_report()
+        elif is_college_tuition_report:
+            self._load_college_tuition_report()
 
     def _on_view_mode_changed(self):
         if self._active_report_id not in self._category_reports:
@@ -473,6 +498,69 @@ class ReportsPane(QWidget):
         rows = compute_projection(inputs)
         series = [("Net Worth", [(date(row.year, 1, 1), row.net_worth) for row in rows])]
         chart = build_line_chart("Net Worth Projection (USD)", series, mark_zero=True)
+        self.chart_view.setChart(chart)
+
+    def _load_college_tuition_report(self):
+        try:
+            accounts = data.list_accounts(self._conn, include_closed=False)
+        except Exception as exc:
+            self._report_error(f"Failed to load college tuition projection report: {exc}")
+            return
+
+        investment_accounts = [
+            (account_id, name)
+            for account_id, name, account_type, _currency, _balance, _is_closed in accounts
+            if account_type == INVESTMENT_ACCOUNT_TYPE
+        ]
+        balances = {
+            account_id: self._to_usd(currency, balance)
+            for account_id, _name, account_type, currency, balance, _is_closed in accounts
+            if account_type == INVESTMENT_ACCOUNT_TYPE
+        }
+        self.college_tuition_controls.set_accounts(investment_accounts, balances)
+
+        values = default_college_tuition_values()
+        values.update(load_college_tuition_settings())
+        self.college_tuition_controls.set_values(values)
+        self._render_college_tuition_chart()
+
+    def _on_college_tuition_updated(self):
+        values = self.college_tuition_controls.values()
+        save_college_tuition_settings(
+            {key: value for key, value in values.items() if key != "starting_fund_value"}
+        )
+        self._render_college_tuition_chart()
+
+    def _render_college_tuition_chart(self):
+        values = self.college_tuition_controls.values()
+        hundred = Decimal("100")
+        inputs = CollegeTuitionInputs(
+            starting_fund_value=Decimal(str(values["starting_fund_value"])),
+            annual_return_rate=Decimal(str(values["annual_return_rate"])) / hundred,
+            contribution_per_quarter=Decimal(str(values["contribution_per_quarter"])),
+            contribution_end_year=values["contribution_end_year"],
+            person1=PersonCollegeCosts(
+                start_year=values["person1_start_year"],
+                end_year=values["person1_end_year"],
+                tuition_per_quarter=Decimal(str(values["person1_tuition_per_quarter"])),
+                housing_per_quarter=Decimal(str(values["person1_housing_per_quarter"])),
+            ),
+            person2=PersonCollegeCosts(
+                start_year=values["person2_start_year"],
+                end_year=values["person2_end_year"],
+                tuition_per_quarter=Decimal(str(values["person2_tuition_per_quarter"])),
+                housing_per_quarter=Decimal(str(values["person2_housing_per_quarter"])),
+            ),
+        )
+        rows = compute_college_tuition_projection(inputs)
+        quarter_start_month = {1: 1, 2: 4, 3: 7, 4: 10}
+        series = [
+            (
+                "College Fund Balance",
+                [(date(row.year, quarter_start_month[row.quarter], 1), row.fund_value) for row in rows],
+            )
+        ]
+        chart = build_line_chart("College Tuition Projection (USD)", series, mark_zero=True)
         self.chart_view.setChart(chart)
 
     def _on_custom_investments_clicked(self):
