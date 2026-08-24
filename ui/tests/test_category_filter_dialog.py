@@ -1,6 +1,6 @@
 from PySide6.QtCore import Qt
 
-from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
+from category_filter_dialog import AccountFilterDialog, CategoryFilterDialog, InvestmentFilterDialog
 
 
 def test_dialog_initializes_checkstate_from_selected_names(qapp):
@@ -47,9 +47,6 @@ def test_investment_filter_dialog_selected_investments_reflects_checkstate(qapp)
     dialog.list_widget.item(1).setCheckState(Qt.Checked)
 
     assert dialog.selected_investments() == {"Vanguard", "Apple"}
-
-
-from category_filter_dialog import AccountFilterDialog
 
 
 def test_account_dialog_initializes_checkstate_from_selected_ids(qapp):
