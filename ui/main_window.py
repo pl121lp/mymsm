@@ -31,9 +31,9 @@ from PySide6.QtWidgets import (
 import data
 import writes
 from account_details_dialog import AccountDetailsDialog
-from amortization import AmortizationInputs, compute_future_amortization, infer_payments_per_year
 from add_account_dialog import AddAccountDialog
 from add_record_dialog import AddRecordDialog
+from amortization import AmortizationInputs, compute_future_amortization, infer_payments_per_year
 from charts import build_line_chart
 from data import INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE
 from dictionaries_tab import CategoriesPane, InvestmentsPane, PayeesPane
