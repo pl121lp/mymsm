@@ -1,0 +1,23 @@
+{
+  "annual_income": 250000.0,
+  "birth_year": 1971,
+  "end_year": 2066,
+  "house_account_id": 130,
+  "house_sale_year": 2046,
+  "inflation_rate": 3.0,
+  "inheritance_amount": 500000.0,
+  "inheritance_year": 2046,
+  "medical_cost_after_retirement": 20000.0,
+  "medicare_age": 65,
+  "retirement_age": 60,
+  "return_rate_after_retirement": 6.0,
+  "return_rate_before_retirement": 8.0,
+  "social_security_annual_amount": 40000.0,
+  "social_security_annual_amount_2": 20000.0,
+  "social_security_start_year": 2036,
+  "social_security_start_year_2": 2039,
+  "spending_after_retirement": 130000.0,
+  "spending_before_retirement": 150000.0,
+  "tax_rate": 20.0,
+  "withdrawal_tax_rate": 15.0
+}

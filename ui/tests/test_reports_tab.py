@@ -765,18 +765,38 @@ def test_selecting_projection_report_loads_persisted_settings(qapp, dict_conn, m
     assert pane.projection_controls.annual_income_spinbox.value() == pytest.approx(12345.0)
 
 
-def test_selecting_projection_report_renders_a_net_worth_line_series(qapp, dict_conn, monkeypatch):
+def test_selecting_projection_report_renders_stacked_assets_and_investments_bands(
+    qapp, dict_conn, monkeypatch
+):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
     _select_projection_report(pane)
 
     chart = pane.chart_view.chart()
-    series = chart.series()
-    assert [s.name() for s in series if s.name()] == ["Net Worth"]
-    net_worth_series = series[0]
-    assert net_worth_series.count() > 1
-    assert net_worth_series.at(0).y() == pytest.approx(426.30)
+    series = [s for s in chart.series() if s.name()]
+    assert [s.name() for s in series] == ["Assets", "Investments"]
+    assets_series, investments_series = series
+    assert assets_series.upperSeries().count() > 1
+    # dict_conn has no Asset accounts, so the Assets band is flat at 0 and
+    # the Investments band's top edge equals the investment-only total.
+    assert assets_series.upperSeries().at(0).y() == pytest.approx(0.0)
+    assert investments_series.upperSeries().at(0).y() == pytest.approx(426.30)
+
+
+def test_selecting_projection_report_includes_asset_accounts_in_the_starting_total(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    _select_projection_report(pane)
+
+    chart = pane.chart_view.chart()
+    assets_series, investments_series = [s for s in chart.series() if s.name()]
+    assert assets_series.upperSeries().at(0).y() == pytest.approx(300000.00)
+    assert investments_series.upperSeries().at(0).y() == pytest.approx(300426.30)
 
 
 def test_selecting_projection_report_populates_house_account_choices(qapp, dict_conn, monkeypatch):
@@ -790,7 +810,9 @@ def test_selecting_projection_report_populates_house_account_choices(qapp, dict_
     assert [combo.itemText(i) for i in range(combo.count())] == ["None", "House"]
 
 
-def test_selecting_house_account_adds_its_value_in_the_sale_year(qapp, dict_conn, monkeypatch):
+def test_selling_the_house_moves_its_value_from_assets_to_investments_without_double_counting(
+    qapp, dict_conn, monkeypatch
+):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
     dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
@@ -808,8 +830,29 @@ def test_selecting_house_account_adds_its_value_in_the_sale_year(qapp, dict_conn
     controls.house_sale_year_spinbox.setValue(date.today().year + 1)
     controls.update_button.click()
 
-    series = pane.chart_view.chart().series()[0]
-    assert series.at(1).y() == pytest.approx(series.at(0).y() + 300000.00)
+    # The house's value leaves the Assets band and lands in Investments'
+    # own contribution in the same year, so the combined total (the top of
+    # the Investments band) stays flat across the sale rather than jumping.
+    total_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert total_series.at(1).y() == pytest.approx(total_series.at(0).y())
+
+
+def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.house_account_combo.setCurrentIndex(1)
+    controls.house_sale_year_spinbox.setValue(date.today().year + 1)
+    controls.update_button.click()
+
+    assets_series = pane.chart_view.chart().series()[0].upperSeries()
+    assert assets_series.at(0).y() == pytest.approx(300000.00)
+    assert assets_series.at(1).y() == pytest.approx(0.0)
 
 
 def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
@@ -831,8 +874,8 @@ def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_co
     controls.social_security_start_year_2_spinbox.setValue(date.today().year + 1)
     controls.update_button.click()
 
-    series = pane.chart_view.chart().series()[0]
-    assert series.at(1).y() == pytest.approx(series.at(0).y() + 1000.0)
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y() + 1000.0)
 
 
 def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):

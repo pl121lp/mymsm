@@ -27,7 +27,7 @@ from PySide6.QtCharts import QChart, QChartView
 import data
 from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
-from charts import build_bar_chart, build_line_chart, build_pie_chart
+from charts import build_bar_chart, build_line_chart, build_pie_chart, build_stacked_area_chart
 from data import ASSET_ACCOUNT_TYPE, INVESTMENT_ACCOUNT_TYPE
 from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_college_tuition_projection
 from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
@@ -519,8 +519,24 @@ class ReportsPane(QWidget):
             withdrawal_tax_rate=Decimal(str(values["withdrawal_tax_rate"])) / hundred,
         )
         rows = compute_projection(inputs)
-        series = [("Net Worth", [(date(row.year, 1, 1), row.net_worth) for row in rows])]
-        chart = build_line_chart("Net Worth Projection (USD)", series, mark_zero=True)
+        assets_total = sum(self._projection_asset_values.values(), start=Decimal("0"))
+        assets_total_after_house_sale = assets_total - house_sale_value
+        house_sale_year = values["house_sale_year"]
+        bands = [
+            (
+                "Assets",
+                [
+                    (
+                        date(row.year, 1, 1),
+                        assets_total_after_house_sale if row.year >= house_sale_year else assets_total,
+                    )
+                    for row in rows
+                ],
+                "#ADD8E6",
+            ),
+            ("Investments", [(date(row.year, 1, 1), row.net_worth) for row in rows], "#FFCC80"),
+        ]
+        chart = build_stacked_area_chart("Net Worth Projection (USD)", bands, mark_zero=True)
         self.chart_view.setChart(chart)
 
     def _load_college_tuition_report(self):

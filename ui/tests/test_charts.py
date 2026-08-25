@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from PySide6.QtCore import Qt
 
-from charts import build_line_chart, build_pie_chart
+from charts import build_line_chart, build_pie_chart, build_stacked_area_chart
 
 
 def test_build_pie_chart_creates_one_slice_per_category(qapp):
@@ -50,3 +50,34 @@ def test_build_line_chart_mark_zero_adds_a_hidden_zero_reference_series(qapp):
     assert all(point.y() == 0.0 for point in zero_series.points())
     markers = chart.legend().markers(zero_series)
     assert markers and markers[0].isVisible() is False
+
+
+def _bands():
+    bottom = [(date(2024, 1, 1), Decimal("100")), (date(2024, 2, 1), Decimal("100"))]
+    top = [(date(2024, 1, 1), Decimal("50")), (date(2024, 2, 1), Decimal("150"))]
+    return [("Bottom", bottom, "#ADD8E6"), ("Top", top, "#FFCC80")]
+
+
+def test_build_stacked_area_chart_creates_one_area_series_per_band(qapp):
+    chart = build_stacked_area_chart("Title", _bands())
+
+    assert [s.name() for s in chart.series()] == ["Bottom", "Top"]
+
+
+def test_build_stacked_area_chart_stacks_bands_cumulatively(qapp):
+    chart = build_stacked_area_chart("Title", _bands())
+
+    bottom_series, top_series = chart.series()
+
+    assert [point.y() for point in bottom_series.lowerSeries().points()] == [0.0, 0.0]
+    assert [point.y() for point in bottom_series.upperSeries().points()] == [100.0, 100.0]
+    assert [point.y() for point in top_series.lowerSeries().points()] == [100.0, 100.0]
+    assert [point.y() for point in top_series.upperSeries().points()] == [150.0, 250.0]
+
+
+def test_build_stacked_area_chart_mark_zero_extends_range_to_include_zero(qapp):
+    negative_bottom = [(date(2024, 1, 1), Decimal("-10")), (date(2024, 2, 1), Decimal("-10"))]
+    chart = build_stacked_area_chart("Title", [("Bottom", negative_bottom, "#ADD8E6")], mark_zero=True)
+
+    axis_y = chart.axes(Qt.Vertical)[0]
+    assert axis_y.max() == 0.0
