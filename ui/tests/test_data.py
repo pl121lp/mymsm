@@ -41,7 +41,8 @@ def test_list_accounts_only_closed_when_requested(conn):
 
 def test_list_accounts_orders_by_account_type_then_name(conn):
     conn.execute(
-        "INSERT INTO accounts VALUES "
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES "
         "(4, 'Roth IRA', '5', FALSE, 0.00, 'USD', NULL), "
         "(5, 'House', '3', FALSE, 500000.00, 'USD', NULL), "
         "(6, 'Mortgage', '6', FALSE, -300000.00, 'USD', NULL), "

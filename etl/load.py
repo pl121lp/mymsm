@@ -49,7 +49,8 @@ def load(raw_dir: Path, db_path: Path) -> dict:
             [(c["category_id"], c["name"]) for c in categories],
         )
         conn.executemany(
-            "INSERT INTO accounts VALUES (?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+            "currency, interest_category_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     a["account_id"], a["name"], a["account_type"], a["is_closed"],

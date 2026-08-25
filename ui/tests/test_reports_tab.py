@@ -788,7 +788,10 @@ def test_selecting_projection_report_includes_asset_accounts_in_the_starting_tot
     qapp, dict_conn, monkeypatch
 ):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
-    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
     _select_projection_report(pane)
@@ -801,7 +804,10 @@ def test_selecting_projection_report_includes_asset_accounts_in_the_starting_tot
 
 def test_selecting_projection_report_populates_house_account_choices(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
-    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
     _select_projection_report(pane)
@@ -814,7 +820,10 @@ def test_selling_the_house_moves_its_value_from_assets_to_investments_without_do
     qapp, dict_conn, monkeypatch
 ):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
-    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
@@ -841,7 +850,10 @@ def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
     qapp, dict_conn, monkeypatch
 ):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
-    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
@@ -894,7 +906,10 @@ def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, 
 
 def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatch, tmp_path):
     settings_path = tmp_path / "projection_settings.json"
-    dict_conn.execute("INSERT INTO accounts VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)")
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
     monkeypatch.setattr(
         reports_tab, "load_projection_settings",
         functools.partial(_real_load_projection_settings, path=settings_path),
@@ -1079,7 +1094,8 @@ def _select_assets_and_investments_report(pane):
 
 def _add_asset_and_loan_accounts(conn):
     conn.execute(
-        "INSERT INTO accounts VALUES "
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES "
         "(5, 'House', '3', FALSE, 500000.00, 'USD', NULL), "
         "(6, 'Car Loan', '6', FALSE, -15000.00, 'USD', NULL)"
     )

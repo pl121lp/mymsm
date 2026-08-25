@@ -15,7 +15,10 @@ CREATE TABLE accounts (
     is_closed            BOOLEAN NOT NULL DEFAULT FALSE,
     opening_balance      DECIMAL(18,4) NOT NULL DEFAULT 0,
     currency             VARCHAR NOT NULL DEFAULT 'USD',
-    interest_category_id BIGINT REFERENCES categories(category_id)
+    interest_category_id BIGINT REFERENCES categories(category_id),
+    loan_interest_rate   DECIMAL(9,6),
+    loan_payment_amount  DECIMAL(18,4),
+    loan_payment_count   INTEGER
 );
 
 CREATE TABLE payees (

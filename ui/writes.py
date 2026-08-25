@@ -29,7 +29,8 @@ def add_account(conn, name, account_type, currency, opening_balance):
     """Inserts a new account row (open by default). Returns the new account_id."""
     account_id = _next_id(conn, "accounts", "account_id")
     conn.execute(
-        "INSERT INTO accounts VALUES (?, ?, ?, FALSE, ?, ?, NULL)",
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (?, ?, ?, FALSE, ?, ?, NULL)",
         [account_id, name, account_type, opening_balance, currency],
     )
     return account_id

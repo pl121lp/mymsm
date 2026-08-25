@@ -65,3 +65,24 @@ def test_accounts_interest_category_id_rejects_unknown_category():
             "INSERT INTO accounts (account_id, name, account_type, is_closed, "
             "opening_balance, interest_category_id) VALUES (1, 'Loan', '6', FALSE, 0, 999)"
         )
+
+
+def test_accounts_table_has_loan_term_columns():
+    conn = duckdb.connect(":memory:")
+    apply_schema(conn)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info('accounts')").fetchall()}
+    assert {"loan_interest_rate", "loan_payment_amount", "loan_payment_count"} <= columns
+
+
+def test_loan_term_columns_default_to_null():
+    conn = duckdb.connect(":memory:")
+    apply_schema(conn)
+    conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance) "
+        "VALUES (1, 'Loan', '6', FALSE, 0)"
+    )
+    row = conn.execute(
+        "SELECT loan_interest_rate, loan_payment_amount, loan_payment_count "
+        "FROM accounts WHERE account_id = 1"
+    ).fetchone()
+    assert row == (None, None, None)

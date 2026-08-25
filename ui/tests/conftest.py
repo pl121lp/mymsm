@@ -28,7 +28,8 @@ def conn():
     connection = duckdb.connect(":memory:")
     apply_schema(connection)
     connection.execute(
-        "INSERT INTO accounts VALUES "
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES "
         "(1, 'Checking', 'Bank', FALSE, 100.00, 'USD', NULL), "
         "(2, 'Old Card', 'Credit', TRUE, 0.00, 'USD', NULL), "
         "(3, 'Brokerage', '5', FALSE, 0.00, 'SEK', NULL)"
@@ -54,7 +55,8 @@ def dict_conn():
     connection = duckdb.connect(":memory:")
     apply_schema(connection)
     connection.execute(
-        "INSERT INTO accounts VALUES "
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES "
         "(1, 'Checking', 'Bank', FALSE, 0.00, 'USD', NULL), "
         "(2, 'Savings', 'Bank', FALSE, 0.00, 'USD', NULL), "
         "(3, 'Brokerage A', '5', FALSE, 0.00, 'USD', NULL), "
@@ -98,7 +100,8 @@ def loan_conn():
         "INSERT INTO categories VALUES (20, 'Loan Interest'), (21, 'Escrow')"
     )
     connection.execute(
-        "INSERT INTO accounts VALUES "
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES "
         "(1, 'Checking', '0', FALSE, 5000.00, 'USD', NULL), "
         "(2, 'Car Loan', '6', FALSE, -1000.00, 'USD', 20), "
         "(3, 'Foreign Checking', '0', FALSE, 5000.00, 'SEK', NULL), "
