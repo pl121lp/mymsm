@@ -1230,6 +1230,56 @@ def test_amortization_checkbox_disabled_with_tooltip_for_loan_missing_terms(qapp
     assert "No interest rate/payment data" in window.amortization_checkbox.toolTip()
 
 
+def test_amortization_checkbox_hidden_for_non_loan_account(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.show()
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Checking"
+    )
+    window.account_view.selectRow(row)
+    assert not window.amortization_checkbox.isVisible()
+    window.close()
+
+
+def test_amortization_checkbox_visible_for_loan_account(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.show()
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    assert window.amortization_checkbox.isVisible()
+    window.close()
+
+
+def test_amortization_checkbox_visible_but_disabled_for_loan_missing_terms(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.show()
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Legacy Loan"
+    )
+    window.account_view.selectRow(row)
+    assert window.amortization_checkbox.isVisible()
+    assert not window.amortization_checkbox.isEnabled()
+    window.close()
+
+
+def test_amortization_checkbox_hidden_when_no_account_selected(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.show()
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    window.account_view.clearSelection()
+    assert not window.amortization_checkbox.isVisible()
+    window.close()
+
+
 def test_amortization_checkbox_checked_shows_amortization_page(qapp, loan_conn):
     window = MainWindow(loan_conn)
     row = next(

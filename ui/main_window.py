@@ -654,6 +654,7 @@ class MainWindow(QMainWindow):
         self.amortization_checkbox.setEnabled(False)
         self.amortization_checkbox.setChecked(False)
         self.amortization_checkbox.setToolTip("")
+        self.amortization_checkbox.setVisible(False)
         self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
         if not indexes:
             self.account_details_label.setText("")
@@ -680,6 +681,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 loan_terms = None
         if is_loan:
+            self.amortization_checkbox.setVisible(True)
             has_amortization = (
                 loan_terms is not None
                 and loan_terms[0] is not None

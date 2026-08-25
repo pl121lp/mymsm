@@ -322,9 +322,12 @@ def compute_assets_and_investments(accounts, to_usd):
     negative (debt owed); shown here as a positive value that is subtracted
     from the total.
 
-    Returns a list of (label, value, emphasized) rows suitable for
-    AssetsAndInvestmentsTableModel.set_rows(); value is None for section
-    header rows.
+    Returns a list of (type_label, name, value, emphasized) rows suitable
+    for AssetsAndInvestmentsTableModel.set_rows(). Section header rows
+    carry the section label in type_label and leave name/value blank;
+    account and total rows leave type_label blank and are indented under
+    their section by appearing in the name/value columns instead. value
+    is None for section header rows.
     """
     investments = []
     assets = []
@@ -347,21 +350,21 @@ def compute_assets_and_investments(accounts, to_usd):
     loan_total = sum((value for _name, value in loans), start=Decimal("0"))
     total_balance = investment_total + asset_total - loan_total
 
-    rows = [("Investments", None, True)]
-    rows += [(name, value, False) for name, value in investments]
-    rows.append(("Total Investments", investment_total, True))
-    rows.append(("Assets", None, True))
-    rows += [(name, value, False) for name, value in assets]
-    rows.append(("Total Assets", asset_total, True))
-    rows.append(("Loans / Liabilities", None, True))
-    rows += [(name, value, False) for name, value in loans]
-    rows.append(("Total Loans", loan_total, True))
-    rows.append(("Total Balance", total_balance, True))
+    rows = [("Investments", "", None, True)]
+    rows += [("", name, value, False) for name, value in investments]
+    rows.append(("", "Total Investments", investment_total, True))
+    rows.append(("Assets", "", None, True))
+    rows += [("", name, value, False) for name, value in assets]
+    rows.append(("", "Total Assets", asset_total, True))
+    rows.append(("Loans / Liabilities", "", None, True))
+    rows += [("", name, value, False) for name, value in loans]
+    rows.append(("", "Total Loans", loan_total, True))
+    rows.append(("", "Total Balance", total_balance, True))
     return rows
 
 
 class AssetsAndInvestmentsTableModel(QAbstractTableModel):
-    COLUMNS = ["Account", "Value (USD)"]
+    COLUMNS = ["Account Type", "Account", "Value (USD)"]
 
     def __init__(self, rows=None, parent=None):
         super().__init__(parent)
@@ -384,10 +387,12 @@ class AssetsAndInvestmentsTableModel(QAbstractTableModel):
         return None
 
     def data(self, index, role=Qt.DisplayRole):
-        label, value, emphasized = self._rows[index.row()]
+        type_label, name, value, emphasized = self._rows[index.row()]
         if role == Qt.DisplayRole:
             if index.column() == 0:
-                return label
+                return type_label
+            if index.column() == 1:
+                return name
             return format_currency(value) if value is not None else ""
         if role == Qt.FontRole and emphasized:
             font = QFont()

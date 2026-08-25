@@ -1131,22 +1131,32 @@ def test_assets_and_investments_report_lists_accounts_by_section_with_totals(qap
 
     view = pane.assets_investments_table_view
     rows = [
-        (_table_cell(view, row, 0), _table_cell(view, row, 1))
+        (_table_cell(view, row, 0), _table_cell(view, row, 1), _table_cell(view, row, 2))
         for row in range(view.model().rowCount())
     ]
     assert rows == [
-        ("Investments", ""),
-        ("Brokerage A", "226.30"),
-        ("Brokerage B", "200.00"),
-        ("Total Investments", "426.30"),
-        ("Assets", ""),
-        ("House", "500,000.00"),
-        ("Total Assets", "500,000.00"),
-        ("Loans / Liabilities", ""),
-        ("Car Loan", "15,000.00"),
-        ("Total Loans", "15,000.00"),
-        ("Total Balance", "485,426.30"),
+        ("Investments", "", ""),
+        ("", "Brokerage A", "226.30"),
+        ("", "Brokerage B", "200.00"),
+        ("", "Total Investments", "426.30"),
+        ("Assets", "", ""),
+        ("", "House", "500,000.00"),
+        ("", "Total Assets", "500,000.00"),
+        ("Loans / Liabilities", "", ""),
+        ("", "Car Loan", "15,000.00"),
+        ("", "Total Loans", "15,000.00"),
+        ("", "Total Balance", "485,426.30"),
     ]
+
+
+def test_assets_and_investments_report_has_account_type_column(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_assets_and_investments_report(pane)
+
+    model = pane.assets_investments_table_model
+    assert model.headerData(0, Qt.Horizontal) == "Account Type"
+    assert model.headerData(1, Qt.Horizontal) == "Account"
+    assert model.headerData(2, Qt.Horizontal) == "Value (USD)"
 
 
 def test_assets_and_investments_report_bolds_headers_and_totals(qapp, dict_conn):
@@ -1167,7 +1177,7 @@ def test_assets_and_investments_report_omits_closed_accounts(qapp, dict_conn):
     _select_assets_and_investments_report(pane)
 
     view = pane.assets_investments_table_view
-    labels = [_table_cell(view, row, 0) for row in range(view.model().rowCount())]
+    labels = [_table_cell(view, row, 1) for row in range(view.model().rowCount())]
     assert "Car Loan" not in labels
     assert "Total Loans" in labels
 
