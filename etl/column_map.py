@@ -18,6 +18,10 @@ ACCOUNTS = {
     "opening_balance": "amtOpen",
     "currency": "hcrnc",
     "interest_category": "hcatInterest",
+    "loan_interest_rate": "rateUser",
+    "loan_interest_rate_fallback": "rateCalc",
+    "loan_payment_amount": "amtPI",
+    "loan_payment_count": "iPmtMax",
 }
 
 # Currency reference table. ACCOUNTS["currency"] holds a foreign key (hcrnc)

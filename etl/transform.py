@@ -51,6 +51,20 @@ def _to_decimal(raw: Optional[str]) -> Optional[Decimal]:
 PRIMARY_CURRENCY = "USD"
 
 
+def _to_loan_rate(raw_primary: Optional[str], raw_fallback: Optional[str]) -> Optional[Decimal]:
+    """rateUser/rateCalc are plain percentages (e.g. "5.0" for 5%);
+    returns the fraction (Decimal("0.05")), preferring raw_primary and
+    only using raw_fallback when raw_primary is absent. Explicit None
+    checks throughout (not truthiness) so a legitimate 0% rate is never
+    mistaken for "missing"."""
+    rate = _to_decimal(raw_primary)
+    if rate is None:
+        rate = _to_decimal(raw_fallback)
+    if rate is None:
+        return None
+    return rate / Decimal(100)
+
+
 def build_currencies(raw_dir: Path) -> dict[int, str]:
     rows = read_raw_table(raw_dir, CURRENCIES["table"])
     result = {}
@@ -87,6 +101,7 @@ def build_accounts(
         interest_category_id = _to_int(row.get(ACCOUNTS["interest_category"]))
         if interest_category_id not in known_category_ids:
             interest_category_id = None
+        loan_payment_amount = _to_decimal(row.get(ACCOUNTS["loan_payment_amount"]))
         result.append({
             "account_id": account_id,
             "name": name,
@@ -95,6 +110,11 @@ def build_accounts(
             "opening_balance": opening_balance,
             "currency": currencies.get(currency_id, PRIMARY_CURRENCY),
             "interest_category_id": interest_category_id,
+            "loan_interest_rate": _to_loan_rate(
+                row.get(ACCOUNTS["loan_interest_rate"]), row.get(ACCOUNTS["loan_interest_rate_fallback"])
+            ),
+            "loan_payment_amount": abs(loan_payment_amount) if loan_payment_amount is not None else None,
+            "loan_payment_count": _to_int(row.get(ACCOUNTS["loan_payment_count"])),
         })
     logger.info("accounts: built %d, skipped %d", len(result), skipped)
     return result

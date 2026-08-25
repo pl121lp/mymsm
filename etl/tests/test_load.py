@@ -68,3 +68,17 @@ def test_load_resolves_loan_interest_and_linked_account_fields(tmp_path):
         conn.close()
     assert car_loan == (10,)
     assert principal == (1,)
+
+
+def test_load_resolves_loan_terms(tmp_path):
+    db_path = tmp_path / "test.duckdb"
+    load(FIXTURES, db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        car_loan = conn.execute(
+            "SELECT loan_interest_rate, loan_payment_amount, loan_payment_count "
+            "FROM accounts WHERE account_id = 5"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert car_loan == (Decimal("0.05"), Decimal("250.00"), 48)

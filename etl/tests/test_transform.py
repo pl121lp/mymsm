@@ -249,3 +249,35 @@ def test_build_transactions_handles_missing_price():
     grant = next(t for t in transactions if t["transaction_id"] == 2003)
     assert grant["price"] is None
     assert grant["quantity"] == Decimal("20.0")
+
+
+def test_build_accounts_parses_loan_interest_rate_from_rate_user():
+    accounts = build_accounts(FIXTURES)
+    car_loan = next(a for a in accounts if a["account_id"] == 5)
+    assert car_loan["loan_interest_rate"] == Decimal("0.05")
+
+
+def test_build_accounts_falls_back_to_rate_calc_when_rate_user_blank():
+    accounts = build_accounts(FIXTURES)
+    old_mortgage = next(a for a in accounts if a["account_id"] == 6)
+    assert old_mortgage["loan_interest_rate"] == Decimal("0.0475")
+
+
+def test_build_accounts_parses_loan_payment_amount_as_positive():
+    accounts = build_accounts(FIXTURES)
+    car_loan = next(a for a in accounts if a["account_id"] == 5)
+    assert car_loan["loan_payment_amount"] == Decimal("250.00")
+
+
+def test_build_accounts_parses_loan_payment_count():
+    accounts = build_accounts(FIXTURES)
+    car_loan = next(a for a in accounts if a["account_id"] == 5)
+    assert car_loan["loan_payment_count"] == 48
+
+
+def test_build_accounts_nulls_loan_fields_for_non_loan_account():
+    accounts = build_accounts(FIXTURES)
+    checking = next(a for a in accounts if a["account_id"] == 1)
+    assert checking["loan_interest_rate"] is None
+    assert checking["loan_payment_amount"] is None
+    assert checking["loan_payment_count"] is None
