@@ -656,10 +656,15 @@ class MainWindow(QMainWindow):
             transactions = data.list_transactions(self._conn, account_id)
             if is_loan:
                 interest_payments = data.list_loan_interest_payments(self._conn, account_id)
-                loan_terms = data.get_loan_terms(self._conn, account_id)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to load transactions: {exc}")
             return
+        loan_terms = None
+        if is_loan:
+            try:
+                loan_terms = data.get_loan_terms(self._conn, account_id)
+            except Exception:
+                loan_terms = None
         if is_loan:
             has_amortization = (
                 loan_terms is not None
