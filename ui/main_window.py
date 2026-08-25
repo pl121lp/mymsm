@@ -1,5 +1,6 @@
 """Main window: account list (left) + transaction/details panel (right)."""
 
+from datetime import date
 from decimal import Decimal
 from functools import partial
 
@@ -30,6 +31,7 @@ from PySide6.QtWidgets import (
 import data
 import writes
 from account_details_dialog import AccountDetailsDialog
+from amortization import AmortizationInputs, compute_future_amortization, infer_payments_per_year
 from add_account_dialog import AddAccountDialog
 from add_record_dialog import AddRecordDialog
 from charts import build_line_chart
@@ -60,6 +62,7 @@ DEFAULT_SEK_TO_USD_RATE = 0.095
 
 TRANSACTIONS_PAGE = 0
 VALUE_PAGE = 1
+AMORTIZATION_PAGE = 2
 
 ACCOUNTS_TAB = 0
 
@@ -145,6 +148,9 @@ class MainWindow(QMainWindow):
         self.value_chart_view = QChartView()
         self.value_chart_view.setRenderHint(QPainter.Antialiasing)
 
+        self.amortization_chart_view = QChartView()
+        self.amortization_chart_view.setRenderHint(QPainter.Antialiasing)
+
         self.add_record_button = QPushButton("Add Record")
         self.add_record_button.clicked.connect(self._on_add_record_button_clicked)
 
@@ -154,15 +160,20 @@ class MainWindow(QMainWindow):
         self.value_checkbox = QCheckBox("Value")
         self.value_checkbox.toggled.connect(self._on_value_checkbox_toggled)
 
+        self.amortization_checkbox = QCheckBox("Amortization")
+        self.amortization_checkbox.toggled.connect(self._on_amortization_checkbox_toggled)
+
         header_row = QHBoxLayout()
         header_row.addWidget(self.account_details_label, 1)
         header_row.addWidget(self.add_record_button)
         header_row.addWidget(self.account_details_button)
         header_row.addWidget(self.value_checkbox)
+        header_row.addWidget(self.amortization_checkbox)
 
         self.content_stack = QStackedWidget()
         self.content_stack.addWidget(self.transaction_view)
         self.content_stack.addWidget(self.value_chart_view)
+        self.content_stack.addWidget(self.amortization_chart_view)
 
         transactions_page = QWidget()
         transactions_layout = QVBoxLayout(transactions_page)
@@ -309,6 +320,10 @@ class MainWindow(QMainWindow):
         if not checked:
             self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
             return
+        if self.amortization_checkbox.isChecked():
+            self.amortization_checkbox.blockSignals(True)
+            self.amortization_checkbox.setChecked(False)
+            self.amortization_checkbox.blockSignals(False)
         indexes = self.account_view.selectionModel().selectedRows()
         if not indexes:
             self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
@@ -331,6 +346,72 @@ class MainWindow(QMainWindow):
         chart = build_line_chart(f"{name} — Value (USD)", [(name, usd_history)])
         self.value_chart_view.setChart(chart)
         self.content_stack.setCurrentIndex(VALUE_PAGE)
+
+    def _on_amortization_checkbox_toggled(self, checked):
+        if not checked:
+            self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+            return
+        if self.value_checkbox.isChecked():
+            self.value_checkbox.blockSignals(True)
+            self.value_checkbox.setChecked(False)
+            self.value_checkbox.blockSignals(False)
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+            return
+        account_id, name, account_type, currency, _, _ = self.account_model.account_at(
+            indexes[0].row()
+        )
+        opening_balance = data.get_opening_balance(self._conn, account_id)
+        try:
+            transactions = data.list_transactions(self._conn, account_id)
+            loan_terms = data.get_loan_terms(self._conn, account_id)
+        except Exception as exc:
+            self.statusBar().showMessage(f"Failed to load amortization schedule: {exc}")
+            return
+        if loan_terms is None or loan_terms[0] is None or not loan_terms[1]:
+            self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
+            return
+        interest_rate, payment_amount, _payment_count = loan_terms
+
+        history = compute_account_value_history(transactions, opening_balance, is_investment=False)
+        usd_history = [
+            (txn_date, self.account_model.to_usd(currency, value)) for txn_date, value in history
+        ]
+        if usd_history:
+            last_date, current_balance = usd_history[-1]
+        else:
+            last_date = date.today()
+            current_balance = self.account_model.to_usd(currency, opening_balance or Decimal("0"))
+
+        payments_per_year = infer_payments_per_year([txn_date for txn_date, _ in usd_history])
+        inputs = AmortizationInputs(
+            current_balance=current_balance,
+            annual_rate=interest_rate,
+            payment_amount=self.account_model.to_usd(currency, payment_amount),
+            payments_per_year=payments_per_year,
+            start_date=last_date,
+        )
+        future_points = compute_future_amortization(inputs)
+
+        if future_points is None:
+            self.statusBar().showMessage(
+                "This loan's payment doesn't cover its interest — no projected payoff is possible."
+            )
+            chart = build_line_chart(
+                f"{name} — Amortization (USD)", [("Actual", usd_history)], mark_zero=True
+            )
+        else:
+            projected = [(last_date, current_balance)] + [
+                (point.point_date, point.balance) for point in future_points
+            ]
+            chart = build_line_chart(
+                f"{name} — Amortization (USD)",
+                [("Actual", usd_history), ("Projected", projected)],
+                mark_zero=True,
+            )
+        self.amortization_chart_view.setChart(chart)
+        self.content_stack.setCurrentIndex(AMORTIZATION_PAGE)
 
     def _refresh_after_write(self):
         self._reload_accounts()
@@ -556,6 +637,9 @@ class MainWindow(QMainWindow):
         self.account_details_button.setEnabled(has_selection)
         self.value_checkbox.setEnabled(has_selection)
         self.value_checkbox.setChecked(False)
+        self.amortization_checkbox.setEnabled(False)
+        self.amortization_checkbox.setChecked(False)
+        self.amortization_checkbox.setToolTip("")
         self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
         if not indexes:
             self.account_details_label.setText("")
@@ -572,10 +656,22 @@ class MainWindow(QMainWindow):
             transactions = data.list_transactions(self._conn, account_id)
             if is_loan:
                 interest_payments = data.list_loan_interest_payments(self._conn, account_id)
+                loan_terms = data.get_loan_terms(self._conn, account_id)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to load transactions: {exc}")
             return
         if is_loan:
+            has_amortization = (
+                loan_terms is not None
+                and loan_terms[0] is not None
+                and loan_terms[1] is not None
+                and loan_terms[1] > 0
+            )
+            self.amortization_checkbox.setEnabled(has_amortization)
+            if not has_amortization:
+                self.amortization_checkbox.setToolTip(
+                    "No interest rate/payment data available for this loan."
+                )
             display_rows = build_loan_transaction_rows(transactions, interest_payments)
             principal_total, usd_interest = compute_loan_totals(
                 transactions, interest_payments, self.account_model.to_usd

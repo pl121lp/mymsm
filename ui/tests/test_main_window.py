@@ -1158,3 +1158,146 @@ def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
 
     assert window.statusBar().currentMessage() == "Nothing to undo."
     window.close()
+
+
+def test_amortization_checkbox_disabled_for_non_loan_account(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Checking"
+    )
+    window.account_view.selectRow(row)
+    assert not window.amortization_checkbox.isEnabled()
+
+
+def test_amortization_checkbox_enabled_for_loan_with_terms(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    assert window.amortization_checkbox.isEnabled()
+
+
+def test_amortization_checkbox_disabled_with_tooltip_for_loan_missing_terms(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Legacy Loan"
+    )
+    window.account_view.selectRow(row)
+    assert not window.amortization_checkbox.isEnabled()
+    assert "No interest rate/payment data" in window.amortization_checkbox.toolTip()
+
+
+def test_amortization_checkbox_checked_shows_amortization_page(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+
+    window.amortization_checkbox.setChecked(True)
+
+    assert window.content_stack.currentWidget() is window.amortization_chart_view
+
+
+def test_amortization_checkbox_unchecked_shows_transaction_table(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    window.amortization_checkbox.setChecked(True)
+
+    window.amortization_checkbox.setChecked(False)
+
+    assert window.content_stack.currentWidget() is window.transaction_view
+
+
+def test_checking_amortization_unchecks_value_checkbox(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    window.value_checkbox.setChecked(True)
+
+    window.amortization_checkbox.setChecked(True)
+
+    assert not window.value_checkbox.isChecked()
+    assert window.content_stack.currentWidget() is window.amortization_chart_view
+
+
+def test_checking_value_unchecks_amortization_checkbox(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+    window.amortization_checkbox.setChecked(True)
+
+    window.value_checkbox.setChecked(True)
+
+    assert not window.amortization_checkbox.isChecked()
+    assert window.content_stack.currentWidget() is window.value_chart_view
+
+
+def test_selecting_new_account_resets_amortization_checkbox(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    car_loan_row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(car_loan_row)
+    window.amortization_checkbox.setChecked(True)
+
+    checking_row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Checking"
+    )
+    window.account_view.selectRow(checking_row)
+
+    assert not window.amortization_checkbox.isChecked()
+    assert window.content_stack.currentWidget() is window.transaction_view
+
+
+def test_amortization_chart_shows_actual_and_projected_series_for_amortizing_loan(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Car Loan"
+    )
+    window.account_view.selectRow(row)
+
+    window.amortization_checkbox.setChecked(True)
+
+    series_names = {s.name() for s in window.amortization_chart_view.chart().series() if s.name()}
+    assert series_names == {"Actual", "Projected"}
+
+
+def test_amortization_view_shows_status_message_when_loan_does_not_amortize(qapp, loan_conn):
+    loan_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id, loan_interest_rate, loan_payment_amount, "
+        "loan_payment_count) VALUES "
+        "(6, 'Bad Loan', '6', FALSE, -100000.00, 'USD', NULL, 0.24, 10.00, 360)"
+    )
+    window = MainWindow(loan_conn)
+    row = next(
+        r for r in range(window.account_model.rowCount())
+        if window.account_model.account_at(r)[1] == "Bad Loan"
+    )
+    window.account_view.selectRow(row)
+
+    window.amortization_checkbox.setChecked(True)
+
+    assert window.content_stack.currentWidget() is window.amortization_chart_view
+    assert "doesn't cover its interest" in window.statusBar().currentMessage()
+    series_names = {s.name() for s in window.amortization_chart_view.chart().series() if s.name()}
+    assert series_names == {"Actual"}
