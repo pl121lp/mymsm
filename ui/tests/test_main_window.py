@@ -2,11 +2,18 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtCore import QEvent, QPointF, QSettings, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
-from main_window import SETTINGS_KEY_SEK_RATE, MainWindow
+import theme
+from main_window import (
+    SETTINGS_APP,
+    SETTINGS_KEY_DARK_MODE,
+    SETTINGS_KEY_SEK_RATE,
+    SETTINGS_ORG,
+    MainWindow,
+)
 
 
 def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
@@ -19,6 +26,38 @@ def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
 def test_accounts_table_has_no_actions_column(qapp, conn):
     window = MainWindow(conn)
     assert "Actions" not in window.account_model.COLUMNS
+
+
+def test_dark_mode_checkbox_is_tab_corner_widget(qapp, conn):
+    window = MainWindow(conn)
+    assert window.tabs.cornerWidget(Qt.TopRightCorner) is window.dark_mode_checkbox
+
+
+def test_dark_mode_checkbox_reflects_saved_setting(qapp, conn):
+    settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+    settings.setValue(SETTINGS_KEY_DARK_MODE, True)
+    try:
+        window = MainWindow(conn)
+        assert window.dark_mode_checkbox.isChecked() is True
+        assert theme.is_dark() is True
+    finally:
+        settings.setValue(SETTINGS_KEY_DARK_MODE, False)
+        theme.apply_theme(qapp, False)
+
+
+def test_toggling_dark_mode_checkbox_persists_setting(qapp, conn):
+    window = MainWindow(conn)
+    try:
+        window.dark_mode_checkbox.setChecked(True)
+        assert window._settings.value(SETTINGS_KEY_DARK_MODE, type=bool) is True
+        assert theme.is_dark() is True
+
+        window.dark_mode_checkbox.setChecked(False)
+        assert window._settings.value(SETTINGS_KEY_DARK_MODE, type=bool) is False
+        assert theme.is_dark() is False
+    finally:
+        window._settings.setValue(SETTINGS_KEY_DARK_MODE, False)
+        theme.apply_theme(qapp, False)
 
 
 def test_add_record_button_reloads_account_on_accept(qapp, conn, monkeypatch):

@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
 )
 
 import data
+import theme
 import writes
 from account_details_dialog import AccountDetailsDialog
 from add_account_dialog import AddAccountDialog
@@ -58,6 +59,7 @@ from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStac
 SETTINGS_ORG = "mymsm"
 SETTINGS_APP = "MoneyBrowser"
 SETTINGS_KEY_SEK_RATE = "sek_to_usd_rate"
+SETTINGS_KEY_DARK_MODE = "dark_mode"
 DEFAULT_SEK_TO_USD_RATE = 0.095
 
 TRANSACTIONS_PAGE = 0
@@ -74,6 +76,9 @@ class MainWindow(QMainWindow):
         self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
         self.setWindowTitle("Money Browser")
         self.resize(1000, 600)
+
+        dark_mode = self._settings.value(SETTINGS_KEY_DARK_MODE, False, type=bool)
+        theme.apply_theme(QApplication.instance(), dark_mode)
 
         self._history = NavigationHistory()
         self._current_view = None
@@ -220,6 +225,11 @@ class MainWindow(QMainWindow):
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
 
+        self.dark_mode_checkbox = QCheckBox("Dark Mode")
+        self.dark_mode_checkbox.setChecked(dark_mode)
+        self.dark_mode_checkbox.toggled.connect(self._on_dark_mode_toggled)
+        self.tabs.setCornerWidget(self.dark_mode_checkbox, Qt.TopRightCorner)
+
         self._reload_accounts()
         self._current_view = self._capture_view()
 
@@ -234,6 +244,10 @@ class MainWindow(QMainWindow):
         self._settings.setValue(SETTINGS_KEY_SEK_RATE, value)
         self._apply_exchange_rate()
         self._update_total_label()
+
+    def _on_dark_mode_toggled(self, checked):
+        self._settings.setValue(SETTINGS_KEY_DARK_MODE, checked)
+        theme.apply_theme(QApplication.instance(), checked)
 
     def _on_refresh_rate_button_clicked(self):
         request = QNetworkRequest(QUrl(FRANKFURTER_URL))

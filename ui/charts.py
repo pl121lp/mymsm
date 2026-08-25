@@ -15,6 +15,8 @@ from PySide6.QtCore import QDateTime, Qt
 from PySide6.QtGui import QBrush, QColor, QCursor
 from PySide6.QtWidgets import QToolTip
 
+import theme
+
 
 def build_line_chart(title, series, mark_zero=False):
     """Build a multi-series date/value line chart.
@@ -26,6 +28,7 @@ def build_line_chart(title, series, mark_zero=False):
     zero is -- used for the net worth projection, which can dip negative.
     """
     chart = QChart()
+    chart.setTheme(theme.chart_theme())
     chart.setTitle(title)
     axis_x = QDateTimeAxis()
     axis_x.setFormat("yyyy-MM-dd")
@@ -94,6 +97,7 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
     mark_zero behaves as in build_line_chart.
     """
     chart = QChart()
+    chart.setTheme(theme.chart_theme())
     chart.setTitle(title)
     axis_x = QDateTimeAxis()
     axis_x.setFormat("yyyy-MM-dd")
@@ -173,6 +177,7 @@ def build_bar_chart(title, categories, values):
     is shown in a tooltip on hover.
     """
     chart = QChart()
+    chart.setTheme(theme.chart_theme())
     chart.setTitle(title)
     chart.legend().setVisible(False)
 
@@ -219,6 +224,7 @@ def build_pie_chart(title, categories):
     total; hovering a slice shows its label and value in a tooltip.
     """
     chart = QChart()
+    chart.setTheme(theme.chart_theme())
     chart.setTitle(title)
 
     series = QPieSeries()
