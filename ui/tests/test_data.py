@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from data import (
     count_transactions_by_payee,
+    get_loan_terms,
     get_transaction_row,
     list_accounts,
     list_categories,
@@ -314,3 +315,15 @@ def test_search_transactions_combines_filters_with_and(dict_conn):
         row[0] for row in search_transactions(dict_conn, category="Groceries", amount_max=Decimal("-30"))
     }
     assert transaction_ids == {1000}
+
+
+def test_get_loan_terms_returns_stored_values(loan_conn):
+    assert get_loan_terms(loan_conn, 2) == (Decimal("0.06"), Decimal("45.00"), 24)
+
+
+def test_get_loan_terms_returns_nulls_for_loan_missing_terms(loan_conn):
+    assert get_loan_terms(loan_conn, 5) == (None, None, None)
+
+
+def test_get_loan_terms_returns_none_for_unknown_account(loan_conn):
+    assert get_loan_terms(loan_conn, 999) is None

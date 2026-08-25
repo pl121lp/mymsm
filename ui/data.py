@@ -84,6 +84,18 @@ def get_opening_balance(conn: duckdb.DuckDBPyConnection, account_id: int):
     return row[0] if row else None
 
 
+def get_loan_terms(conn: duckdb.DuckDBPyConnection, account_id: int) -> tuple | None:
+    """(interest_rate, payment_amount, payment_count) for a loan account,
+    as imported from Money -- interest_rate is a fraction (e.g. 0.05 for
+    5%), payment_amount is the positive principal+interest installment.
+    Any field may individually be None if that data wasn't available in
+    the source. Returns None only if the account itself doesn't exist."""
+    return conn.execute(
+        "SELECT loan_interest_rate, loan_payment_amount, loan_payment_count "
+        "FROM accounts WHERE account_id = ?", [account_id],
+    ).fetchone()
+
+
 def list_transactions(conn: duckdb.DuckDBPyConnection, account_id: int) -> list[tuple]:
     query = """
         SELECT t.transaction_id, t.txn_date, p.name, c.name, t.memo, t.amount,

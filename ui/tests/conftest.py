@@ -101,11 +101,13 @@ def loan_conn():
     )
     connection.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
-        "currency, interest_category_id) VALUES "
-        "(1, 'Checking', '0', FALSE, 5000.00, 'USD', NULL), "
-        "(2, 'Car Loan', '6', FALSE, -1000.00, 'USD', 20), "
-        "(3, 'Foreign Checking', '0', FALSE, 5000.00, 'SEK', NULL), "
-        "(4, 'Foreign Loan', '6', FALSE, -1000.00, 'SEK', 20)"
+        "currency, interest_category_id, loan_interest_rate, loan_payment_amount, "
+        "loan_payment_count) VALUES "
+        "(1, 'Checking', '0', FALSE, 5000.00, 'USD', NULL, NULL, NULL, NULL), "
+        "(2, 'Car Loan', '6', FALSE, -1000.00, 'USD', 20, 0.06, 45.00, 24), "
+        "(3, 'Foreign Checking', '0', FALSE, 5000.00, 'SEK', NULL, NULL, NULL, NULL), "
+        "(4, 'Foreign Loan', '6', FALSE, -1000.00, 'SEK', 20, 0.04, 50.00, 24), "
+        "(5, 'Legacy Loan', '6', FALSE, -500.00, 'USD', NULL, NULL, NULL, NULL)"
     )
     connection.execute("INSERT INTO payees VALUES (100, 'NFCU')")
     connection.execute(
