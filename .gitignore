@@ -2,6 +2,7 @@
 *.mbf
 data/raw/
 money.duckdb
+backups/
 payee_aliases.json
 projection_settings.json
 college_tuition_settings.json

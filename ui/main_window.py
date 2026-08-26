@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import backup
 import data
 import theme
 import writes
@@ -627,6 +628,10 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(account_row)
         self._on_account_selected()
         self.statusBar().showMessage("Record deleted.")
+
+    def closeEvent(self, event):
+        backup.backup_on_exit(self._conn)
+        super().closeEvent(event)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress and event.button() == Qt.BackButton:
