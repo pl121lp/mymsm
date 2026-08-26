@@ -296,6 +296,7 @@ class MainWindow(QMainWindow):
         self.transaction_model.set_transactions([])
         self.add_record_button.setEnabled(False)
         self.add_grant_button.setEnabled(False)
+        self.add_grant_button.setVisible(False)
         self.account_details_button.setEnabled(False)
         self.value_checkbox.setEnabled(False)
         self.value_checkbox.setChecked(False)
@@ -673,6 +674,7 @@ class MainWindow(QMainWindow):
         has_selection = bool(indexes)
         self.add_record_button.setEnabled(has_selection)
         self.add_grant_button.setEnabled(False)
+        self.add_grant_button.setVisible(False)
         self.account_details_button.setEnabled(has_selection)
         self.value_checkbox.setEnabled(has_selection)
         self.value_checkbox.setChecked(False)
@@ -691,6 +693,7 @@ class MainWindow(QMainWindow):
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
         is_loan = account_type == LOAN_ACCOUNT_TYPE
         self.add_grant_button.setEnabled(is_investment)
+        self.add_grant_button.setVisible(is_investment)
         balance_label = "Value" if is_investment else "Balance"
         usd_balance = self.account_model.to_usd(currency, balance)
         try:

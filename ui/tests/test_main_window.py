@@ -531,16 +531,26 @@ def test_header_controls_enabled_when_account_selected(qapp, conn):
     assert window.value_checkbox.isEnabled()
 
 
-def test_add_grant_button_disabled_for_non_investment_account(qapp, conn):
+def test_add_grant_button_hidden_for_non_investment_account(qapp, conn):
     window = MainWindow(conn)
+    window.show()
     window.account_view.selectRow(1)  # row 1 = Checking, a cash account
     assert not window.add_grant_button.isEnabled()
+    assert not window.add_grant_button.isVisible()
 
 
-def test_add_grant_button_enabled_for_investment_account(qapp, conn):
+def test_add_grant_button_visible_for_investment_account(qapp, conn):
     window = MainWindow(conn)
+    window.show()
     window.account_view.selectRow(0)  # row 0 = Brokerage (see conn fixture ordering)
     assert window.add_grant_button.isEnabled()
+    assert window.add_grant_button.isVisible()
+
+
+def test_add_grant_button_hidden_when_no_account_selected(qapp, conn):
+    window = MainWindow(conn)
+    window.show()
+    assert not window.add_grant_button.isVisible()
 
 
 def test_add_grant_button_reloads_account_on_accept(qapp, conn, monkeypatch):
