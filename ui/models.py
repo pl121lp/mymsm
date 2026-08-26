@@ -1,13 +1,12 @@
 """Qt table models adapting data.py query results for QTableViews."""
 
-import calendar
+from datetime import date
 from decimal import Decimal
 
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
 from PySide6.QtGui import QFont
 
-from datetime import date
-
+from dateutils import add_months
 from data import (
     ASSET_ACCOUNT_TYPE,
     BUY_ACTIVITY,
@@ -149,21 +148,13 @@ def compute_loan_totals(transactions, interest_payments, to_usd):
     return total_principal, total_interest
 
 
-def _add_months(base_date, months):
-    month_index = base_date.month - 1 + months
-    year = base_date.year + month_index // 12
-    month = month_index % 12 + 1
-    day = min(base_date.day, calendar.monthrange(year, month)[1])
-    return base_date.replace(year=year, month=month, day=day)
-
-
 def generate_sample_dates(earliest, latest, months=3):
     """Dates from earliest to latest spaced `months` apart, always ending at latest."""
     dates = []
     current = earliest
     while current < latest:
         dates.append(current)
-        current = _add_months(current, months)
+        current = add_months(current, months)
     dates.append(latest)
     return dates
 

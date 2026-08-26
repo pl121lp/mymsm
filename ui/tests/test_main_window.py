@@ -520,6 +520,7 @@ def test_header_controls_disabled_when_no_account_selected(qapp, conn):
     assert not window.add_record_button.isEnabled()
     assert not window.account_details_button.isEnabled()
     assert not window.value_checkbox.isEnabled()
+    assert not window.add_grant_button.isEnabled()
 
 
 def test_header_controls_enabled_when_account_selected(qapp, conn):
@@ -528,6 +529,92 @@ def test_header_controls_enabled_when_account_selected(qapp, conn):
     assert window.add_record_button.isEnabled()
     assert window.account_details_button.isEnabled()
     assert window.value_checkbox.isEnabled()
+
+
+def test_add_grant_button_disabled_for_non_investment_account(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking, a cash account
+    assert not window.add_grant_button.isEnabled()
+
+
+def test_add_grant_button_enabled_for_investment_account(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(0)  # row 0 = Brokerage (see conn fixture ordering)
+    assert window.add_grant_button.isEnabled()
+
+
+def test_add_grant_button_reloads_account_on_accept(qapp, conn, monkeypatch):
+    import add_grant_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+
+    def fake_exec(self):
+        self.transaction_ids = [9001]
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_grant_dialog.AddGrantDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(0)  # row 0 = Brokerage (see conn fixture ordering)
+    reload_calls.clear()  # drop the reload that happened during __init__
+
+    window._on_add_grant_button_clicked()
+
+    assert reload_calls == [True]
+    assert window.statusBar().currentMessage() == "Grant added."
+
+
+def test_add_grant_button_does_nothing_on_cancel(qapp, conn, monkeypatch):
+    import add_grant_dialog
+
+    reload_calls = []
+    original_reload = MainWindow._reload_accounts
+
+    def spy_reload(self):
+        reload_calls.append(True)
+        original_reload(self)
+
+    monkeypatch.setattr(MainWindow, "_reload_accounts", spy_reload)
+    monkeypatch.setattr(add_grant_dialog.AddGrantDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(0)
+    reload_calls.clear()
+
+    window._on_add_grant_button_clicked()
+
+    assert reload_calls == []
+
+
+def test_add_grant_button_pushes_undo_command(qapp, conn, monkeypatch):
+    import add_grant_dialog
+    import writes
+
+    def fake_exec(self):
+        self.transaction_ids = writes.add_rsu_grant(
+            self._conn, self._account_id, security_name="2025 New Grant",
+            grant_date=date(2024, 1, 1), total_shares=12,
+            vest_frequency_months=3, vest_count=4,
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(add_grant_dialog.AddGrantDialog, "exec", fake_exec)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(0)  # row 0 = Brokerage
+
+    window._on_add_grant_button_clicked()
+
+    assert bool(window._undo_stack) is True
+    command = window._undo_stack.pop()
+    assert command.description == "Add grant (5 record(s))"
 
 
 def test_account_details_button_opens_dialog_with_selected_account_fields(qapp, conn, monkeypatch):

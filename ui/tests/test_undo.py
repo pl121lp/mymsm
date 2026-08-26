@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import data
 import writes
-from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
+from undo import AddCommand, AddGrantCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 
 
 def test_undo_stack_pop_on_empty_returns_none():
@@ -110,6 +110,28 @@ def test_import_command_undo_removes_all_imported_ids(conn):
 def test_import_command_description_mentions_the_count():
     command = ImportCommand([3004, 3005, 3006])
     assert command.description == "Import 3 record(s)"
+
+
+def test_add_grant_command_undo_removes_all_grant_and_vest_rows(conn):
+    transaction_ids = writes.add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=10, vest_frequency_months=3, vest_count=3,
+    )
+    command = AddGrantCommand(transaction_ids)
+
+    command.undo(conn)
+
+    placeholders = ",".join("?" for _ in transaction_ids)
+    rows = conn.execute(
+        f"SELECT transaction_id FROM transactions WHERE transaction_id IN ({placeholders})",
+        transaction_ids,
+    ).fetchall()
+    assert rows == []
+
+
+def test_add_grant_command_description_mentions_the_count():
+    command = AddGrantCommand([3004, 3005, 3006, 3007])
+    assert command.description == "Add grant (4 record(s))"
 
 
 def test_edit_then_delete_then_undo_twice_restores_original_row(conn):

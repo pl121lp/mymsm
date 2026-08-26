@@ -67,3 +67,12 @@ class ImportCommand:
 
     def undo(self, conn):
         writes.delete_transactions(conn, self.transaction_ids)
+
+
+class AddGrantCommand:
+    def __init__(self, transaction_ids):
+        self.transaction_ids = transaction_ids
+        self.description = f"Add grant ({len(transaction_ids)} record(s))"
+
+    def undo(self, conn):
+        writes.delete_transactions(conn, self.transaction_ids)

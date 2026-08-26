@@ -7,6 +7,7 @@ import data
 from qfx_import import QfxRecord
 from writes import (
     add_account,
+    add_rsu_grant,
     add_transaction,
     delete_account,
     delete_transaction,
@@ -421,3 +422,98 @@ def test_import_transactions_rolls_back_all_rows_on_failure(conn):
 
 def test_import_transactions_returns_empty_list_for_empty_records(conn):
     assert import_transactions(conn, account_id=1, records=[]) == []
+
+
+def test_add_rsu_grant_inserts_grant_row(conn):
+    add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=10, vest_frequency_months=3, vest_count=3,
+    )
+    row = conn.execute(
+        "SELECT t.txn_date, t.activity, t.quantity, t.price, t.amount, sec.name "
+        "FROM transactions t JOIN securities sec ON sec.security_id = t.security_id "
+        "WHERE t.account_id = 3 AND t.activity = '17' AND sec.name = '2025 New Grant'"
+    ).fetchone()
+    assert row == (
+        date(2024, 1, 1), "17", Decimal("10"), Decimal("0"), Decimal("0"), "2025 New Grant",
+    )
+
+
+def test_add_rsu_grant_inserts_vest_rows_spaced_by_frequency(conn):
+    add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=10, vest_frequency_months=3, vest_count=3,
+    )
+    rows = conn.execute(
+        "SELECT t.txn_date, t.price, t.amount FROM transactions t "
+        "JOIN securities sec ON sec.security_id = t.security_id "
+        "WHERE t.account_id = 3 AND t.activity = '18' AND sec.name = '2025 New Grant' "
+        "ORDER BY t.txn_date"
+    ).fetchall()
+    assert rows == [
+        (date(2024, 4, 1), None, Decimal("0")),
+        (date(2024, 7, 1), None, Decimal("0")),
+        (date(2024, 10, 1), None, Decimal("0")),
+    ]
+
+
+def test_add_rsu_grant_splits_shares_evenly_with_remainder_on_last_vest(conn):
+    add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=10, vest_frequency_months=3, vest_count=3,
+    )
+    quantities = conn.execute(
+        "SELECT t.quantity FROM transactions t "
+        "JOIN securities sec ON sec.security_id = t.security_id "
+        "WHERE t.account_id = 3 AND t.activity = '18' AND sec.name = '2025 New Grant' "
+        "ORDER BY t.txn_date"
+    ).fetchall()
+    assert [q[0] for q in quantities] == [Decimal("3"), Decimal("3"), Decimal("4")]
+
+
+def test_add_rsu_grant_reuses_existing_security_case_insensitive(conn):
+    # security 500 ("Vanguard Total Stock Market Index") already exists in the conn fixture.
+    before = len(data.list_securities(conn))
+    add_rsu_grant(
+        conn, account_id=3, security_name="vanguard total stock market index",
+        grant_date=date(2024, 1, 1), total_shares=6, vest_frequency_months=3, vest_count=2,
+    )
+    assert len(data.list_securities(conn)) == before
+
+
+def test_add_rsu_grant_creates_new_security_for_unknown_name(conn):
+    add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=6, vest_frequency_months=3, vest_count=2,
+    )
+    assert "2025 New Grant" in [name for _id, name in data.list_securities(conn)]
+
+
+def test_add_rsu_grant_returns_transaction_ids_grant_first_then_vests_in_order(conn):
+    transaction_ids = add_rsu_grant(
+        conn, account_id=3, security_name="2025 New Grant", grant_date=date(2024, 1, 1),
+        total_shares=10, vest_frequency_months=3, vest_count=3,
+    )
+    assert len(transaction_ids) == 4
+    rows = conn.execute(
+        "SELECT transaction_id, activity, txn_date FROM transactions "
+        "WHERE transaction_id IN ({}) ORDER BY transaction_id".format(
+            ",".join("?" for _ in transaction_ids)
+        ),
+        transaction_ids,
+    ).fetchall()
+    assert rows[0][1] == "17"
+    assert [row[1] for row in rows[1:]] == ["18", "18", "18"]
+    assert [row[2] for row in rows[1:]] == [date(2024, 4, 1), date(2024, 7, 1), date(2024, 10, 1)]
+
+
+def test_add_rsu_grant_rolls_back_all_rows_on_failure(conn):
+    before_transactions = len(data.list_transactions(conn, account_id=3))
+    before_securities = data.list_securities(conn)
+    with pytest.raises(Exception):
+        add_rsu_grant(
+            conn, account_id=3, security_name="2025 New Grant", grant_date=None,  # NOT NULL violation
+            total_shares=10, vest_frequency_months=3, vest_count=3,
+        )
+    assert len(data.list_transactions(conn, account_id=3)) == before_transactions
+    assert data.list_securities(conn) == before_securities

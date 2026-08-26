@@ -33,6 +33,7 @@ import theme
 import writes
 from account_details_dialog import AccountDetailsDialog
 from add_account_dialog import AddAccountDialog
+from add_grant_dialog import AddGrantDialog
 from add_record_dialog import AddRecordDialog
 from amortization import AmortizationInputs, compute_future_amortization, infer_payments_per_year
 from charts import build_line_chart
@@ -54,7 +55,7 @@ from qfx_import import parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
-from undo import AddCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
+from undo import AddCommand, AddGrantCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 
 SETTINGS_ORG = "mymsm"
 SETTINGS_APP = "MoneyBrowser"
@@ -160,6 +161,9 @@ class MainWindow(QMainWindow):
         self.add_record_button = QPushButton("Add Record")
         self.add_record_button.clicked.connect(self._on_add_record_button_clicked)
 
+        self.add_grant_button = QPushButton("Add Grant")
+        self.add_grant_button.clicked.connect(self._on_add_grant_button_clicked)
+
         self.account_details_button = QPushButton("Account Details")
         self.account_details_button.clicked.connect(self._on_account_details_button_clicked)
 
@@ -172,6 +176,7 @@ class MainWindow(QMainWindow):
         header_row = QHBoxLayout()
         header_row.addWidget(self.account_details_label, 1)
         header_row.addWidget(self.add_record_button)
+        header_row.addWidget(self.add_grant_button)
         header_row.addWidget(self.account_details_button)
         header_row.addWidget(self.value_checkbox)
         header_row.addWidget(self.amortization_checkbox)
@@ -290,6 +295,7 @@ class MainWindow(QMainWindow):
         self.account_details_label.setText("")
         self.transaction_model.set_transactions([])
         self.add_record_button.setEnabled(False)
+        self.add_grant_button.setEnabled(False)
         self.account_details_button.setEnabled(False)
         self.value_checkbox.setEnabled(False)
         self.value_checkbox.setChecked(False)
@@ -463,6 +469,23 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(row)
         self._on_account_selected()
         self.statusBar().showMessage("Record added.")
+
+    def _on_add_grant_button_clicked(self):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        row = indexes[0].row()
+        account_id, _name, _account_type, _currency, _balance, _is_closed = self.account_model.account_at(
+            row
+        )
+        dialog = AddGrantDialog(self._conn, account_id, parent=self)
+        if dialog.exec() != AddGrantDialog.Accepted:
+            return
+        self._undo_stack.push(AddGrantCommand(dialog.transaction_ids))
+        self._refresh_after_write()
+        self.account_view.selectRow(row)
+        self._on_account_selected()
+        self.statusBar().showMessage("Grant added.")
 
     def _on_new_account_button_clicked(self):
         dialog = AddAccountDialog(self._conn, parent=self)
@@ -649,6 +672,7 @@ class MainWindow(QMainWindow):
         indexes = self.account_view.selectionModel().selectedRows()
         has_selection = bool(indexes)
         self.add_record_button.setEnabled(has_selection)
+        self.add_grant_button.setEnabled(False)
         self.account_details_button.setEnabled(has_selection)
         self.value_checkbox.setEnabled(has_selection)
         self.value_checkbox.setChecked(False)
@@ -666,6 +690,7 @@ class MainWindow(QMainWindow):
         )
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
         is_loan = account_type == LOAN_ACCOUNT_TYPE
+        self.add_grant_button.setEnabled(is_investment)
         balance_label = "Value" if is_investment else "Balance"
         usd_balance = self.account_model.to_usd(currency, balance)
         try:

@@ -6,6 +6,10 @@ a dictionary row (payee/category/security) without the transaction that
 introduced it, or vice versa.
 """
 
+from decimal import Decimal
+
+from dateutils import add_months
+
 
 def _next_id(conn, table, id_column):
     # table/id_column are always literals from call sites in this module,
@@ -176,6 +180,52 @@ def import_transactions(conn, account_id, records):
                 [
                     transaction_id, account_id, None, payee_id, record.txn_date, record.amount,
                     record.memo or None, None, None, None, None,
+                ],
+            )
+            transaction_ids.append(transaction_id)
+            transaction_id += 1
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+    return transaction_ids
+
+
+def add_rsu_grant(
+    conn, account_id, security_name, grant_date, total_shares, vest_frequency_months, vest_count,
+):
+    """Creates a Grant (activity 17) transaction for `total_shares` on
+    `grant_date`, plus `vest_count` Vested (activity 18) transactions spaced
+    `vest_frequency_months` apart, starting one interval after grant_date.
+    Shares are split evenly across the vests; the last vest absorbs any
+    rounding remainder so the total matches `total_shares` exactly (Money's
+    own uniform-percentage rounding can drift by a share or two over a long
+    schedule). Returns the new transaction_ids, grant first, then vests in
+    chronological order."""
+    conn.begin()
+    try:
+        security_id = _find_or_create(conn, "securities", "security_id", security_name)
+        transaction_id = _next_id(conn, "transactions", "transaction_id")
+        transaction_ids = [transaction_id]
+        conn.execute(
+            "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+            [
+                transaction_id, account_id, None, None, grant_date, Decimal("0"),
+                None, security_id, "17", Decimal(total_shares), Decimal("0"),
+            ],
+        )
+        transaction_id += 1
+
+        per_vest = total_shares // vest_count
+        remainder = total_shares - per_vest * vest_count
+        for i in range(1, vest_count + 1):
+            quantity = per_vest + remainder if i == vest_count else per_vest
+            conn.execute(
+                "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                [
+                    transaction_id, account_id, None, None,
+                    add_months(grant_date, i * vest_frequency_months), Decimal("0"),
+                    None, security_id, "18", Decimal(quantity), None,
                 ],
             )
             transaction_ids.append(transaction_id)

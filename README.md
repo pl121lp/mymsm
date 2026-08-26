@@ -85,21 +85,27 @@ Each account row has an "Add Record" button that opens a form for adding a
 single transaction to that account (Payee/Category for cash accounts;
 Security/Activity/Quantity/Price for investment accounts). Typing a new
 Payee, Category, or Security name adds it to the corresponding dictionary
-automatically; existing names autocomplete as you type. This is the only
-place the app writes to `money.duckdb` — everything else remains
-read-only. Note: re-running `./extract-data-to-db.sh` rebuilds
-`money.duckdb` from the `.mny` file from scratch, so manually-added
-records won't survive a re-extraction.
+automatically; existing names autocomplete as you type. Investment accounts
+also get an "Add Grant" button for RSU-style grants: enter a grant name,
+grant date, total shares, and a vesting cadence (e.g. quarterly for 3
+years), and it creates the Grant transaction plus every future Vested
+transaction in one go, splitting the shares evenly (the last vest absorbs
+any rounding remainder). Both buttons are the only places the app writes to
+`money.duckdb` — everything else remains read-only. Note: re-running
+`./extract-data-to-db.sh` rebuilds `money.duckdb` from the `.mny` file from
+scratch, so manually-added records won't survive a re-extraction.
 
 For investment accounts, the transaction table shows the security name,
 activity, quantity, and price instead of payee/category. The account's
-value is computed as (net shares held) × (latest known price), summed
-per security — but only Buy/Sell activity is currently understood well
-enough to affect share counts. Other investment activity codes seen in
-the raw data (position adjustments, transfers, stock grants) are shown
-in the table but don't yet affect the computed value, so accounts whose
-shares mostly came in through those (e.g. RSU grants) will show an
-undercounted value. See `ACTIVITY_LABELS` in `ui/models.py`.
+value is computed as (net shares held) × (latest known price), summed per
+security. Buy(1)/Sell(2) activity affects share counts, as does Money's
+RSU activity: Grant(17) is unvested and doesn't count, Vested(18) adds to
+holdings, Sold(19) subtracts, and Expired(20) is never relevant. A
+transaction dated in the future (Money pre-records a grant's entire
+vesting schedule up front) is ignored until that date arrives. Other
+investment activity codes (position adjustments, transfers) are shown in
+the table but don't yet affect the computed value. See `ACTIVITY_LABELS`
+in `ui/models.py`.
 
 The app also has a "Dictionaries" tab with "Categories", "Payees", and
 "Investments" sub-tabs. Categories shows a list of category names; selecting
@@ -119,12 +125,11 @@ merges are recorded in a sibling `payee_aliases.json` file (also
 git-ignored, since it reflects your personal payee data) and applied to the
 payee list and transaction lookups at read time.
 
-The same caveat above about only Buy/Sell activity being understood well
-enough to affect share counts also applies to the quantity chart: a
-security whose shares came in mostly through other activity codes
-(transfers, grants, adjustments) will show an undercounted or empty
-quantity chart. A security with no Buy/Sell activity at all shows empty
-charts.
+The same caveat above about which activity codes affect share counts also
+applies to the quantity chart: a security whose shares came in mostly
+through an activity code other than Buy/Sell/Vested/Sold (e.g. transfers,
+adjustments) will show an undercounted or empty quantity chart. A security
+with none of those activity codes shows empty charts.
 
 Accounts in a foreign currency are detected automatically from Money's own
 currency data (`ACCT.hcrnc` → `CRNC.szIsoCode`) and shown in a `Currency`
