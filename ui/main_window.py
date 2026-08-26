@@ -133,6 +133,7 @@ class MainWindow(QMainWindow):
         self.account_view.horizontalHeader().setSectionResizeMode(0, QHeaderView.Interactive)
         self.account_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.account_view.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.account_view.setSortingEnabled(True)
         self.account_view.selectionModel().selectionChanged.connect(self._on_account_selected)
         enable_cell_copy(self.account_view, extra_actions=self._account_context_actions)
 

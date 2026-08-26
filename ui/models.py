@@ -440,6 +440,24 @@ class AccountTableModel(QAbstractTableModel):
             start=Decimal("0"),
         )
 
+    def sort(self, column, order=Qt.AscendingOrder):
+        if not self._accounts:
+            return
+        reverse = order == Qt.DescendingOrder
+        if column == self.COLUMNS.index("Name"):
+            key = lambda row: row[1].lower()
+        elif column == self.COLUMNS.index("Type"):
+            key = lambda row: account_type_label(row[2]).lower()
+        elif column == self.COLUMNS.index("Currency"):
+            key = lambda row: row[3]
+        elif column == self.COLUMNS.index("Balance"):
+            key = lambda row: self.to_usd(row[3], row[4])
+        else:
+            return
+        self.layoutAboutToBeChanged.emit()
+        self._accounts.sort(key=key, reverse=reverse)
+        self.layoutChanged.emit()
+
     def account_id_at(self, row):
         return self._accounts[row][0]
 

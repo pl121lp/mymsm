@@ -87,6 +87,55 @@ def test_total_usd_excludes_closed_accounts():
     assert model.total_usd() == Decimal("100.00")
 
 
+def test_account_model_sort_by_name_ascending():
+    model = AccountTableModel([
+        (1, "Savings", "0", "USD", Decimal("100.00"), False),
+        (2, "Checking", "0", "USD", Decimal("50.00"), False),
+    ])
+    model.sort(0, Qt.AscendingOrder)
+    assert _data(model, 0, 0) == "Checking"
+    assert _data(model, 1, 0) == "Savings"
+
+
+def test_account_model_sort_by_name_is_case_insensitive():
+    model = AccountTableModel([
+        (1, "savings", "0", "USD", Decimal("100.00"), False),
+        (2, "Checking", "0", "USD", Decimal("50.00"), False),
+    ])
+    model.sort(0, Qt.AscendingOrder)
+    assert _data(model, 0, 0) == "Checking"
+    assert _data(model, 1, 0) == "savings"
+
+
+def test_account_model_sort_by_type_descending():
+    model = AccountTableModel([
+        (1, "Checking", "0", "USD", Decimal("100.00"), False),
+        (2, "Card", "1", "USD", Decimal("50.00"), False),
+    ])
+    model.sort(1, Qt.DescendingOrder)
+    assert _data(model, 0, 1) == "Credit"
+    assert _data(model, 1, 1) == "Checking/Savings"
+
+
+def test_account_model_sort_by_balance_uses_usd_converted_value():
+    # Raw balance order is Checking(300) < Savings(2000), but converted to USD
+    # (Savings at 0.10 -> 200) the order flips: Savings(200) < Checking(300).
+    model = AccountTableModel([
+        (1, "Checking", "0", "USD", Decimal("300.00"), False),
+        (2, "Savings", "0", "SEK", Decimal("2000.00"), False),
+    ])
+    model.set_exchange_rates({"SEK": Decimal("0.10")})
+    model.sort(3, Qt.AscendingOrder)
+    assert _data(model, 0, 0) == "Savings"
+    assert _data(model, 1, 0) == "Checking"
+
+
+def test_account_model_sort_on_empty_accounts_does_not_crash():
+    model = AccountTableModel([])
+    model.sort(0, Qt.AscendingOrder)
+    assert model.rowCount() == 0
+
+
 def test_open_account_name_has_no_prefix():
     model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False)])
     assert _data(model, 0, 0) == "Checking"
