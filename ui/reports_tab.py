@@ -46,6 +46,7 @@ from models import (
     compute_spending_by_category,
     generate_sample_dates,
 )
+import theme
 from projection import ProjectionInputs, compute_projection
 from projection_controls import ProjectionControlsPanel, default_projection_values
 from projection_settings import load_projection_settings, save_projection_settings
@@ -73,6 +74,12 @@ def _to_qdate(python_date):
     return QDate(python_date.year, python_date.month, python_date.day)
 
 
+def _empty_chart():
+    chart = QChart()
+    chart.setTheme(theme.chart_theme())
+    return chart
+
+
 class ReportsPane(QWidget):
     def __init__(self, conn, report_error, to_usd, parent=None):
         super().__init__(parent)
@@ -97,6 +104,7 @@ class ReportsPane(QWidget):
 
         self.chart_view = QChartView()
         self.chart_view.setRenderHint(QPainter.Antialiasing)
+        self.chart_view.setChart(_empty_chart())
 
         self.spending_table_model = SpendingByCategoryTableModel()
         self.income_table_model = IncomeByCategoryTableModel()
@@ -232,7 +240,7 @@ class ReportsPane(QWidget):
         indexes = self.list_view.selectionModel().selectedIndexes()
         if not indexes:
             self._active_report_id = None
-            self.chart_view.setChart(QChart())
+            self.chart_view.setChart(_empty_chart())
             self.spending_table_model.set_categories([])
             self.income_table_model.set_categories([])
             self.investment_table_model.set_investments([])
@@ -320,7 +328,7 @@ class ReportsPane(QWidget):
 
         if earliest is None:
             self._net_worth_accounts = []
-            self.chart_view.setChart(QChart())
+            self.chart_view.setChart(_empty_chart())
             self.range_label.setText("")
             self._report_error("No transactions available for net worth report.")
             return

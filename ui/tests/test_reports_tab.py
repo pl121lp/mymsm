@@ -6,6 +6,7 @@ from PySide6.QtCore import QDate, QItemSelectionModel, Qt
 from PySide6.QtWidgets import QDialog, QScrollArea, QSizePolicy
 
 import reports_tab
+import theme
 from college_tuition_settings import (
     load_college_tuition_settings as _real_load_college_tuition_settings,
     save_college_tuition_settings as _real_save_college_tuition_settings,
@@ -86,6 +87,19 @@ def test_reports_list_shows_income_by_category_report(qapp, dict_conn):
 def test_reports_list_shows_investment_analysis_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.data(pane.list_model.index(3, 0)) == "Investment analysis"
+
+
+def test_empty_chart_panel_uses_dark_theme_when_dark_mode_is_active(qapp, dict_conn):
+    theme.apply_theme(qapp, True)
+    try:
+        pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+        assert pane.chart_view.chart().theme() == theme.chart_theme()
+
+        _select_net_worth_report(pane)
+        pane.list_view.selectionModel().clearSelection()
+        assert pane.chart_view.chart().theme() == theme.chart_theme()
+    finally:
+        theme.apply_theme(qapp, False)
 
 
 def test_selecting_net_worth_report_draws_a_bar_chart(qapp, dict_conn):
