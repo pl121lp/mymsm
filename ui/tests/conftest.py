@@ -1,3 +1,4 @@
+import gc
 import os
 import sys
 from pathlib import Path
@@ -21,6 +22,30 @@ def qapp():
     if app is None:
         app = QApplication([])
     return app
+
+
+@pytest.fixture(autouse=True)
+def _destroy_leftover_main_windows(qapp):
+    """MainWindow installs itself as a global QApplication event filter
+    (for back-button navigation) and connects several of its own bound
+    methods to signals on its child widgets. That's fine for the app's one
+    long-lived window, but in tests every `MainWindow(conn)` a test
+    constructs and drops leaves behind a widget<->signal reference cycle
+    that Python's cyclic GC can't see through (the connection lives on the
+    C++ side), so the window is never collected. Its still-installed event
+    filter then makes every event dispatched anywhere in the app also walk
+    through that dead window (and every other leftover one), so each test
+    gets slower than the last as they pile up. Explicitly destroying the
+    C++ object breaks the cycle and deregisters the filter immediately.
+    """
+    yield
+    import shiboken6
+
+    from main_window import MainWindow
+
+    for obj in gc.get_objects():
+        if isinstance(obj, MainWindow) and shiboken6.isValid(obj):
+            shiboken6.delete(obj)
 
 
 @pytest.fixture
