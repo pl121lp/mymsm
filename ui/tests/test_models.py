@@ -151,8 +151,15 @@ def test_activity_buy_and_sell_are_translated_to_labels():
     assert activity_label("2") == "Sell"
 
 
+def test_rsu_activity_codes_are_translated_to_labels():
+    assert activity_label("17") == "Grant"
+    assert activity_label("18") == "Vested"
+    assert activity_label("19") == "Sold"
+    assert activity_label("20") == "Expired"
+
+
 def test_unknown_activity_falls_back_to_raw_value():
-    assert activity_label("17") == "Activity 17"
+    assert activity_label("99") == "Activity 99"
 
 
 def test_activity_label_of_none_is_blank():
@@ -200,7 +207,7 @@ def test_investment_row_with_missing_price_displays_blank():
     )
     model = TransactionTableModel()
     model.set_transactions([row], is_investment=True)
-    assert _data(model, 0, 2) == "Activity 17"
+    assert _data(model, 0, 2) == "Grant"
     assert _data(model, 0, 4) == ""
 
 
@@ -503,6 +510,40 @@ def test_compute_account_value_history_investment_account_ignores_non_trade_acti
     ]
     history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
     assert history == [(date(2024, 1, 10), Decimal("147.12"))]
+
+
+def test_compute_account_value_history_counts_vested_rsu_shares():
+    rows = [
+        (1, date(2024, 1, 20), None, None, None, Decimal("0.00"),
+         "RSU Grant A", "17", Decimal("10.0"), Decimal("0.00")),
+        (2, date(2024, 2, 20), None, None, None, Decimal("0.00"),
+         "RSU Grant A", "18", Decimal("6.0"), None),
+        (3, date(2024, 3, 20), None, None, None, Decimal("-80.00"),
+         "RSU Grant A", "19", Decimal("2.0"), Decimal("40.00")),
+    ]
+    history = compute_account_value_history(rows, Decimal("0.00"), is_investment=True)
+    assert history == [
+        (date(2024, 2, 20), Decimal("0.00")),   # 6 vested, no known price yet
+        (date(2024, 3, 20), Decimal("160.00")),  # 4 remaining * $40
+    ]
+
+
+def test_compute_account_value_history_excludes_rsu_vests_after_today():
+    rows = [
+        (1, date(2024, 2, 20), None, None, None, Decimal("0.00"),
+         "RSU Grant A", "18", Decimal("6.0"), None),
+        (2, date(2024, 3, 20), None, None, None, Decimal("-80.00"),
+         "RSU Grant A", "19", Decimal("2.0"), Decimal("40.00")),
+        (3, date(2099, 1, 1), None, None, None, Decimal("0.00"),
+         "RSU Grant A", "18", Decimal("4.0"), None),
+    ]
+    history = compute_account_value_history(
+        rows, Decimal("0.00"), is_investment=True, today=date(2024, 6, 1)
+    )
+    assert history == [
+        (date(2024, 2, 20), Decimal("0.00")),
+        (date(2024, 3, 20), Decimal("160.00")),
+    ]
 
 
 SEARCH_ROW = (

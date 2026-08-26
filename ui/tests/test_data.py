@@ -62,6 +62,47 @@ def test_list_accounts_orders_by_account_type_then_name(conn):
     ]
 
 
+def test_list_accounts_counts_vested_rsu_shares_net_of_sales(conn):
+    conn.execute("INSERT INTO securities VALUES (501, 'RSU Grant A')")
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3100, 3, NULL, NULL, '2024-01-01', 0.00, NULL, 501, '17', 10.0, 0.00, NULL), "
+        "(3101, 3, NULL, NULL, '2024-02-01', 0.00, NULL, 501, '18', 6.0, NULL, NULL), "
+        "(3102, 3, NULL, NULL, '2024-03-01', -80.00, NULL, 501, '19', 2.0, 40.00, NULL)"
+    )
+    balance = next(row[4] for row in list_accounts(conn) if row[0] == 3)
+    # existing Fund A holding (226.30) + 4 vested-and-unsold RSU shares * $40 latest price = 160.00
+    assert balance == Decimal("386.30")
+
+
+def test_list_accounts_ignores_rsu_vests_not_yet_reached(conn):
+    conn.execute("INSERT INTO securities VALUES (501, 'RSU Grant A')")
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3100, 3, NULL, NULL, '2024-01-01', 0.00, NULL, 501, '17', 10.0, 0.00, NULL), "
+        "(3101, 3, NULL, NULL, '2024-02-01', 0.00, NULL, 501, '18', 6.0, NULL, NULL), "
+        "(3102, 3, NULL, NULL, '2099-01-01', 0.00, NULL, 501, '18', 4.0, NULL, NULL), "
+        "(3103, 3, NULL, NULL, '2024-03-01', -240.00, NULL, 501, '19', 1.0, 40.00, NULL)"
+    )
+    balance = next(row[4] for row in list_accounts(conn) if row[0] == 3)
+    # 6 vested - 1 sold = 5 shares counted; the 4 shares vesting in 2099 don't count yet
+    assert balance == Decimal("426.30")
+
+
+def test_list_accounts_ignores_zero_price_rows_when_finding_latest_rsu_price(conn):
+    conn.execute("INSERT INTO securities VALUES (501, 'RSU Grant A')")
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3100, 3, NULL, NULL, '2024-01-01', 0.00, NULL, 501, '17', 10.0, 0.00, NULL), "
+        "(3101, 3, NULL, NULL, '2024-02-01', 0.00, NULL, 501, '18', 6.0, NULL, NULL), "
+        "(3102, 3, NULL, NULL, '2024-03-01', -80.00, NULL, 501, '19', 2.0, 40.00, NULL), "
+        "(3103, 3, NULL, NULL, '2024-04-01', 0.00, 'tax', 501, '19', 1.0, 0.00, NULL)"
+    )
+    balance = next(row[4] for row in list_accounts(conn) if row[0] == 3)
+    # 6 vested - 2 - 1 = 3 shares; latest *known* (non-zero) price is still $40 from 2024-03-01
+    assert balance == Decimal("346.30")
+
+
 def test_list_transactions_returns_joined_rows_sorted_by_date_desc(conn):
     transactions = list_transactions(conn, account_id=1)
     assert transactions == [
@@ -215,6 +256,25 @@ def test_list_investment_prices_returns_priced_trades_across_accounts(dict_conn)
 def test_list_investment_prices_excludes_securities_with_no_priced_trades(dict_conn):
     names = {row[0] for row in list_investment_prices(dict_conn)}
     assert "Apple Inc" not in names
+
+
+def test_list_investment_prices_includes_priced_rsu_sales(dict_conn):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'RSU Grant A')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3200, 3, NULL, NULL, '2024-03-10', -80.00, NULL, 502, '19', 2.0, 40.00, NULL)"
+    )
+    assert ("RSU Grant A", date(2024, 3, 10), Decimal("40.00")) in list_investment_prices(dict_conn)
+
+
+def test_list_investment_prices_excludes_zero_priced_rsu_tax_withholding_sales(dict_conn):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'RSU Grant A')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3200, 3, NULL, NULL, '2024-03-10', 0.00, 'tax', 502, '19', 1.0, 0.00, NULL)"
+    )
+    names = {row[0] for row in list_investment_prices(dict_conn)}
+    assert "RSU Grant A" not in names
 
 
 def test_count_transactions_by_payee_ignores_null_payee(dict_conn):

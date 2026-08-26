@@ -6,7 +6,17 @@ from decimal import Decimal
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
 from PySide6.QtGui import QFont
 
-from data import ASSET_ACCOUNT_TYPE, BUY_ACTIVITY, INVESTMENT_ACCOUNT_TYPE, LOAN_ACCOUNT_TYPE, SELL_ACTIVITY
+from datetime import date
+
+from data import (
+    ASSET_ACCOUNT_TYPE,
+    BUY_ACTIVITY,
+    INVESTMENT_ACCOUNT_TYPE,
+    LOAN_ACCOUNT_TYPE,
+    RSU_SELL_ACTIVITY,
+    SELL_ACTIVITY,
+    VEST_ACTIVITY,
+)
 
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
@@ -26,6 +36,10 @@ def account_type_label(account_type):
 ACTIVITY_LABELS = {
     "1": "Buy",
     "2": "Sell",
+    "17": "Grant",
+    "18": "Vested",
+    "19": "Sold",
+    "20": "Expired",
 }
 
 
@@ -48,13 +62,17 @@ def format_quantity(quantity):
 PRIMARY_CURRENCY = "USD"
 
 
-def compute_account_value_history(transactions, opening_balance, is_investment):
+def compute_account_value_history(transactions, opening_balance, is_investment, today=None):
     """Running account value over time, from data.list_transactions() rows.
 
     For non-investment accounts this is the opening balance plus a running
     cumulative sum of transaction amounts. For investment accounts it's the
     running (quantity * latest known price) summed across held securities,
-    using the same buy/sell signed-quantity logic as data.list_accounts().
+    using the same buy/sell/vest/RSU-sell signed-quantity logic as
+    data.list_accounts(). RSU grant (17) and expiration (20) activity never
+    affect quantity. Transactions dated after `today` (default: today's real
+    date) are skipped entirely -- Money pre-records a grant's whole future
+    vesting schedule up front, and those shares aren't held yet.
     """
     ordered = sorted(transactions, key=lambda row: row[1])
 
@@ -66,16 +84,19 @@ def compute_account_value_history(transactions, opening_balance, is_investment):
             history.append((row[1], balance))
         return history
 
+    today = today or date.today()
     quantities = {}
     prices = {}
     history = []
     for row in ordered:
         txn_date, security, activity, quantity, price = row[1], row[6], row[7], row[8], row[9]
-        if security is None or activity not in (BUY_ACTIVITY, SELL_ACTIVITY):
+        if security is None or activity not in (BUY_ACTIVITY, SELL_ACTIVITY, VEST_ACTIVITY, RSU_SELL_ACTIVITY):
             continue
-        signed_qty = -quantity if activity == SELL_ACTIVITY else quantity
+        if txn_date > today:
+            continue
+        signed_qty = -quantity if activity in (SELL_ACTIVITY, RSU_SELL_ACTIVITY) else quantity
         quantities[security] = quantities.get(security, Decimal("0")) + signed_qty
-        if price is not None:
+        if price is not None and price > 0:
             prices[security] = price
         total = sum(
             (quantities[sec] * prices[sec] for sec in quantities if sec in prices),

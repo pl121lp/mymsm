@@ -11,6 +11,12 @@ LOAN_ACCOUNT_TYPE = "6"
 ASSET_ACCOUNT_TYPE = "3"
 BUY_ACTIVITY = "1"
 SELL_ACTIVITY = "2"
+# RSU-specific activity codes Money uses for grant/vest/sell/expiration
+# events (17-20). A grant (17) is unvested and doesn't affect holdings;
+# vested shares (18) add to holdings like a buy; RSU sales (19) subtract
+# like a sell; expiration (20) is never relevant to a share count.
+VEST_ACTIVITY = "18"
+RSU_SELL_ACTIVITY = "19"
 
 
 def list_accounts(
@@ -19,9 +25,10 @@ def list_accounts(
     query = """
         WITH signed_holdings AS (
             SELECT t.account_id, t.security_id, t.txn_date, t.price,
-                   CASE WHEN t.activity = ? THEN -t.quantity ELSE t.quantity END AS signed_qty
+                   CASE WHEN t.activity IN (?, ?) THEN -t.quantity ELSE t.quantity END AS signed_qty
             FROM transactions t
-            WHERE t.security_id IS NOT NULL AND t.activity IN (?, ?)
+            WHERE t.security_id IS NOT NULL AND t.activity IN (?, ?, ?, ?)
+                  AND t.txn_date <= CURRENT_DATE
         ),
         latest_price AS (
             SELECT account_id, security_id, price,
@@ -29,7 +36,7 @@ def list_accounts(
                        PARTITION BY account_id, security_id ORDER BY txn_date DESC
                    ) AS rn
             FROM signed_holdings
-            WHERE price IS NOT NULL
+            WHERE price IS NOT NULL AND price > 0
         ),
         holdings AS (
             SELECT account_id, security_id, SUM(signed_qty) AS net_qty
@@ -58,7 +65,11 @@ def list_accounts(
         LEFT JOIN cash ON cash.account_id = a.account_id
         LEFT JOIN investment_value iv ON iv.account_id = a.account_id
     """
-    params = [SELL_ACTIVITY, BUY_ACTIVITY, SELL_ACTIVITY, INVESTMENT_ACCOUNT_TYPE]
+    params = [
+        SELL_ACTIVITY, RSU_SELL_ACTIVITY,
+        BUY_ACTIVITY, SELL_ACTIVITY, VEST_ACTIVITY, RSU_SELL_ACTIVITY,
+        INVESTMENT_ACCOUNT_TYPE,
+    ]
     if only_closed:
         query += " WHERE a.is_closed = TRUE"
     elif not include_closed:
@@ -310,10 +321,10 @@ def list_investment_prices(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
         SELECT s.name, t.txn_date, t.price
         FROM transactions t
         JOIN securities s ON s.security_id = t.security_id
-        WHERE t.activity IN (?, ?) AND t.price IS NOT NULL
+        WHERE t.activity IN (?, ?, ?) AND t.price IS NOT NULL AND t.price > 0
         ORDER BY s.name, t.txn_date
     """
-    return conn.execute(query, [BUY_ACTIVITY, SELL_ACTIVITY]).fetchall()
+    return conn.execute(query, [BUY_ACTIVITY, SELL_ACTIVITY, RSU_SELL_ACTIVITY]).fetchall()
 
 
 def list_security_history(
