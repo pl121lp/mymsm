@@ -2,14 +2,14 @@
 
 money.duckdb is opened read-only (see data.py) and is never written to.
 Payee merges accepted from the Dictionaries > Payees tab are instead
-recorded here, in a sibling JSON file, and applied to the payee list and
-transaction lookups at read time.
+recorded here, in a JSON file under config/, and applied to the payee
+list and transaction lookups at read time.
 """
 
 import json
 from pathlib import Path
 
-DEFAULT_ALIASES_PATH = Path(__file__).resolve().parent.parent / "payee_aliases.json"
+DEFAULT_ALIASES_PATH = Path(__file__).resolve().parent.parent / "config" / "payee_aliases.json"
 
 
 def _read(path):
@@ -39,6 +39,8 @@ def save_aliases(groups, names, path=DEFAULT_ALIASES_PATH):
         "groups": {str(k): v for k, v in groups.items()},
         "names": {str(k): v for k, v in names.items()},
     }
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(payload, f, indent=2, sort_keys=True)
 

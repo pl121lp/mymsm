@@ -3,7 +3,7 @@
 money.duckdb is opened read-only; these are the user's projection inputs
 (expected return, contribution, per-person tuition/housing/timeline, and
 which accounts feed the fund), not financial records, so they're kept in
-a sibling JSON file instead -- same pattern as projection_settings.py.
+a JSON file under config/ instead -- same pattern as projection_settings.py.
 starting_fund_value is deliberately never stored here: it's always
 recomputed live from currently selected accounts' balances.
 """
@@ -11,7 +11,9 @@ recomputed live from currently selected accounts' balances.
 import json
 from pathlib import Path
 
-DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "college_tuition_settings.json"
+DEFAULT_SETTINGS_PATH = (
+    Path(__file__).resolve().parent.parent / "config" / "college_tuition_settings.json"
+)
 
 
 def load_college_tuition_settings(path=DEFAULT_SETTINGS_PATH):
@@ -28,5 +30,7 @@ def load_college_tuition_settings(path=DEFAULT_SETTINGS_PATH):
 
 def save_college_tuition_settings(settings, path=DEFAULT_SETTINGS_PATH):
     """settings: flat dict of college tuition input fields (JSON-serializable)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(settings, f, indent=2, sort_keys=True)

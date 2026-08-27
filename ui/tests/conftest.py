@@ -11,7 +11,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "etl"))
 import duckdb
 import pytest
 
+import app_settings
 from schema import apply_schema
+
+
+@pytest.fixture(autouse=True)
+def _isolate_app_settings(tmp_path, monkeypatch):
+    """Without this, any test that constructs a MainWindow would load from
+    and save to the real repo-root app_settings.json."""
+    monkeypatch.setattr(app_settings, "DEFAULT_SETTINGS_PATH", tmp_path / "app_settings.json")
 
 
 @pytest.fixture(scope="session")

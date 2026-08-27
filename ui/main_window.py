@@ -5,7 +5,7 @@ from decimal import Decimal
 from functools import partial
 
 from PySide6.QtCharts import QChartView
-from PySide6.QtCore import QEvent, QSettings, Qt, QUrl
+from PySide6.QtCore import QEvent, Qt, QUrl
 from PySide6.QtGui import QKeySequence, QPainter, QShortcut
 from PySide6.QtNetwork import QNetworkAccessManager, QNetworkReply, QNetworkRequest
 from PySide6.QtWidgets import (
@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+import app_settings
 import backup
 import data
 import theme
@@ -58,8 +59,6 @@ from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
 from undo import AddCommand, AddGrantCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
 
-SETTINGS_ORG = "mymsm"
-SETTINGS_APP = "MoneyBrowser"
 SETTINGS_KEY_SEK_RATE = "sek_to_usd_rate"
 SETTINGS_KEY_DARK_MODE = "dark_mode"
 DEFAULT_SEK_TO_USD_RATE = 0.095
@@ -75,11 +74,12 @@ class MainWindow(QMainWindow):
     def __init__(self, conn, parent=None):
         super().__init__(parent)
         self._conn = conn
-        self._settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
+        self._app_settings_path = app_settings.DEFAULT_SETTINGS_PATH
+        self._app_settings = app_settings.load_app_settings(self._app_settings_path)
         self.setWindowTitle("Money Browser")
         self.resize(1000, 600)
 
-        dark_mode = self._settings.value(SETTINGS_KEY_DARK_MODE, False, type=bool)
+        dark_mode = self._app_settings.get(SETTINGS_KEY_DARK_MODE, False)
         theme.apply_theme(QApplication.instance(), dark_mode)
 
         self._history = NavigationHistory()
@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         self.sek_rate_spinbox.setDecimals(4)
         self.sek_rate_spinbox.setSingleStep(0.001)
         self.sek_rate_spinbox.setValue(
-            self._settings.value(SETTINGS_KEY_SEK_RATE, DEFAULT_SEK_TO_USD_RATE, type=float)
+            self._app_settings.get(SETTINGS_KEY_SEK_RATE, DEFAULT_SEK_TO_USD_RATE)
         )
         self.sek_rate_spinbox.valueChanged.connect(self._on_exchange_rate_changed)
         self._apply_exchange_rate()
@@ -248,12 +248,14 @@ class MainWindow(QMainWindow):
         self.total_label.setText(f"Total: {format_currency(self.account_model.total_usd())} USD")
 
     def _on_exchange_rate_changed(self, value):
-        self._settings.setValue(SETTINGS_KEY_SEK_RATE, value)
+        self._app_settings[SETTINGS_KEY_SEK_RATE] = value
+        app_settings.save_app_settings(self._app_settings, self._app_settings_path)
         self._apply_exchange_rate()
         self._update_total_label()
 
     def _on_dark_mode_toggled(self, checked):
-        self._settings.setValue(SETTINGS_KEY_DARK_MODE, checked)
+        self._app_settings[SETTINGS_KEY_DARK_MODE] = checked
+        app_settings.save_app_settings(self._app_settings, self._app_settings_path)
         theme.apply_theme(QApplication.instance(), checked)
 
     def _on_refresh_rate_button_clicked(self):

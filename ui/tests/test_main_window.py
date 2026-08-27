@@ -2,18 +2,13 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, QSettings, Qt
+from PySide6.QtCore import QEvent, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
 
+import app_settings
 import theme
-from main_window import (
-    SETTINGS_APP,
-    SETTINGS_KEY_DARK_MODE,
-    SETTINGS_KEY_SEK_RATE,
-    SETTINGS_ORG,
-    MainWindow,
-)
+from main_window import SETTINGS_KEY_DARK_MODE, SETTINGS_KEY_SEK_RATE, MainWindow
 
 
 def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
@@ -34,14 +29,15 @@ def test_dark_mode_checkbox_is_tab_corner_widget(qapp, conn):
 
 
 def test_dark_mode_checkbox_reflects_saved_setting(qapp, conn):
-    settings = QSettings(SETTINGS_ORG, SETTINGS_APP)
-    settings.setValue(SETTINGS_KEY_DARK_MODE, True)
+    app_settings.save_app_settings(
+        {SETTINGS_KEY_DARK_MODE: True}, app_settings.DEFAULT_SETTINGS_PATH
+    )
+
+    window = MainWindow(conn)
     try:
-        window = MainWindow(conn)
         assert window.dark_mode_checkbox.isChecked() is True
         assert theme.is_dark() is True
     finally:
-        settings.setValue(SETTINGS_KEY_DARK_MODE, False)
         theme.apply_theme(qapp, False)
 
 
@@ -49,14 +45,15 @@ def test_toggling_dark_mode_checkbox_persists_setting(qapp, conn):
     window = MainWindow(conn)
     try:
         window.dark_mode_checkbox.setChecked(True)
-        assert window._settings.value(SETTINGS_KEY_DARK_MODE, type=bool) is True
+        saved = app_settings.load_app_settings(app_settings.DEFAULT_SETTINGS_PATH)
+        assert saved[SETTINGS_KEY_DARK_MODE] is True
         assert theme.is_dark() is True
 
         window.dark_mode_checkbox.setChecked(False)
-        assert window._settings.value(SETTINGS_KEY_DARK_MODE, type=bool) is False
+        saved = app_settings.load_app_settings(app_settings.DEFAULT_SETTINGS_PATH)
+        assert saved[SETTINGS_KEY_DARK_MODE] is False
         assert theme.is_dark() is False
     finally:
-        window._settings.setValue(SETTINGS_KEY_DARK_MODE, False)
         theme.apply_theme(qapp, False)
 
 
@@ -1121,7 +1118,7 @@ def test_apply_rate_response_updates_spinbox_on_success(qapp, conn):
     window._apply_rate_response(True, body)
 
     assert window.sek_rate_spinbox.value() == pytest.approx(0.1234)
-    assert window._settings.value(SETTINGS_KEY_SEK_RATE, type=float) == pytest.approx(0.1234)
+    assert window._app_settings[SETTINGS_KEY_SEK_RATE] == pytest.approx(0.1234)
     assert "0.1234" in window.statusBar().currentMessage()
     assert window.refresh_rate_button.isEnabled() is True
 

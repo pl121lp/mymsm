@@ -2,7 +2,7 @@
 
 money.duckdb is opened read-only; these are the user's projection inputs
 (birth year, return rates, retirement age, etc.), not financial records,
-so they're kept in a sibling JSON file instead -- same pattern as
+so they're kept in a JSON file under config/ instead -- same pattern as
 payee_aliases.py. starting_investment_value is deliberately never stored
 here: it's always recomputed live from current account data.
 """
@@ -10,7 +10,7 @@ here: it's always recomputed live from current account data.
 import json
 from pathlib import Path
 
-DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "projection_settings.json"
+DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "config" / "projection_settings.json"
 
 
 def load_projection_settings(path=DEFAULT_SETTINGS_PATH):
@@ -27,5 +27,7 @@ def load_projection_settings(path=DEFAULT_SETTINGS_PATH):
 
 def save_projection_settings(settings, path=DEFAULT_SETTINGS_PATH):
     """settings: flat dict of projection input fields (JSON-serializable)."""
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(settings, f, indent=2, sort_keys=True)
