@@ -679,12 +679,14 @@ class MainWindow(QMainWindow):
         self._maybe_record_view_change()
         indexes = self.account_view.selectionModel().selectedRows()
         has_selection = bool(indexes)
+        keep_value_checked = has_selection and self.value_checkbox.isChecked()
         self.add_record_button.setEnabled(has_selection)
         self.add_grant_button.setEnabled(False)
         self.add_grant_button.setVisible(False)
         self.account_details_button.setEnabled(has_selection)
         self.value_checkbox.setEnabled(has_selection)
-        self.value_checkbox.setChecked(False)
+        if not keep_value_checked:
+            self.value_checkbox.setChecked(False)
         self.amortization_checkbox.setEnabled(False)
         self.amortization_checkbox.setChecked(False)
         self.amortization_checkbox.setToolTip("")
@@ -750,3 +752,5 @@ class MainWindow(QMainWindow):
             )
             self.transaction_model.set_transactions(transactions, is_investment=is_investment)
         self.transaction_view.resizeColumnsToContents()
+        if keep_value_checked:
+            self._on_value_checkbox_toggled(True)

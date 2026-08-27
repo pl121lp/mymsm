@@ -36,7 +36,7 @@ def main():
         sys.exit(1)
 
     window = MainWindow(conn)
-    window.show()
+    window.showMaximized()
     sys.exit(app.exec())
 
 
