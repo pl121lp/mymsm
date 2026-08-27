@@ -13,7 +13,7 @@ def test_load_writes_expected_row_counts(tmp_path):
     db_path = tmp_path / "test.duckdb"
     summary = load(FIXTURES, db_path)
     assert summary == {
-        "accounts": 6,
+        "accounts": 8,
         "categories": 2,
         "payees": 2,
         "securities": 2,

@@ -50,6 +50,17 @@ def _to_decimal(raw: Optional[str]) -> Optional[Decimal]:
 
 PRIMARY_CURRENCY = "USD"
 
+# Money account-type codes ("at") that don't have their own distinct
+# handling in this app -- normalized to the type code they should behave as.
+ACCOUNT_TYPE_ALIASES = {
+    "2": "0",  # Cash account -> Checking/Savings
+    "4": "6",  # Second loan type Money uses -> Loan
+}
+# Account types with no useful data in this app (e.g. Money's built-in
+# "Accounts Receivable" placeholder) -- accounts with these types are
+# dropped entirely rather than imported.
+HIDDEN_ACCOUNT_TYPES = {"8"}
+
 
 def _to_loan_rate(raw_primary: Optional[str], raw_fallback: Optional[str]) -> Optional[Decimal]:
     """rateUser/rateCalc are plain percentages (e.g. "5.0" for 5%);
@@ -93,6 +104,11 @@ def build_accounts(
         if account_id is None or not name:
             skipped += 1
             continue
+        account_type = row.get(ACCOUNTS["account_type"]) or None
+        if account_type in HIDDEN_ACCOUNT_TYPES:
+            skipped += 1
+            continue
+        account_type = ACCOUNT_TYPE_ALIASES.get(account_type, account_type)
         try:
             opening_balance = convert_currency(row.get(ACCOUNTS["opening_balance"]) or "")
         except ValueError:
@@ -109,7 +125,7 @@ def build_accounts(
         result.append({
             "account_id": account_id,
             "name": name,
-            "account_type": row.get(ACCOUNTS["account_type"]) or None,
+            "account_type": account_type,
             "is_closed": (row.get(ACCOUNTS["is_closed"]) or "").strip() in ("1", "true", "True"),
             "opening_balance": opening_balance,
             "date_opened": date_opened,

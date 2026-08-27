@@ -16,12 +16,29 @@ FIXTURES = Path(__file__).parent / "fixtures"
 
 def test_build_accounts():
     accounts = build_accounts(FIXTURES)
-    assert len(accounts) == 6
+    assert len(accounts) == 8
     checking = next(a for a in accounts if a["account_id"] == 1)
     assert checking["name"] == "Checking"
     assert checking["is_closed"] is False
     old_card = next(a for a in accounts if a["account_id"] == 3)
     assert old_card["is_closed"] is True
+
+
+def test_build_accounts_aliases_type_2_to_checking_savings():
+    accounts = build_accounts(FIXTURES)
+    cash_fund = next(a for a in accounts if a["account_id"] == 7)
+    assert cash_fund["account_type"] == "0"
+
+
+def test_build_accounts_aliases_type_4_to_loan():
+    accounts = build_accounts(FIXTURES)
+    old_loan = next(a for a in accounts if a["account_id"] == 8)
+    assert old_loan["account_type"] == "6"
+
+
+def test_build_accounts_hides_type_8_accounts():
+    accounts = build_accounts(FIXTURES)
+    assert all(a["account_id"] != 9 for a in accounts)
 
 
 def test_build_accounts_resolves_interest_category_id_when_known():
