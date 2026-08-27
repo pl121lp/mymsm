@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 
 import data
 import payee_aliases
+import theme
 from charts import build_line_chart
 from models import (
     CategoryTransactionTableModel,
@@ -27,6 +28,12 @@ from models import (
 from payee_merge import find_merge_groups
 from payee_merge_dialog import PayeeMergeDialog
 from table_copy import enable_cell_copy
+
+
+def _empty_chart():
+    chart = QChart()
+    chart.setTheme(theme.chart_theme())
+    return chart
 
 
 class CategoriesPane(QWidget):
@@ -257,8 +264,10 @@ class InvestmentsPane(QWidget):
 
         self.price_chart_view = QChartView()
         self.price_chart_view.setRenderHint(QPainter.Antialiasing)
+        self.price_chart_view.setChart(_empty_chart())
         self.quantity_chart_view = QChartView()
         self.quantity_chart_view.setRenderHint(QPainter.Antialiasing)
+        self.quantity_chart_view.setChart(_empty_chart())
 
         charts_widget = QWidget()
         charts_layout = QVBoxLayout(charts_widget)
@@ -288,8 +297,8 @@ class InvestmentsPane(QWidget):
     def _on_selected(self, selected=None, deselected=None):
         indexes = self.list_view.selectionModel().selectedIndexes()
         if not indexes:
-            self.price_chart_view.setChart(QChart())
-            self.quantity_chart_view.setChart(QChart())
+            self.price_chart_view.setChart(_empty_chart())
+            self.quantity_chart_view.setChart(_empty_chart())
             return
         security_id = self.list_model.id_at(indexes[0].row())
         try:
