@@ -371,7 +371,7 @@ class ReportsPane(QWidget):
             self._render_investment_table(start, end)
 
     def _render_net_worth_chart(self, start, end):
-        sample_dates = generate_sample_dates(start, end)
+        sample_dates = generate_sample_dates(start, end, months=2)
         series = compute_net_worth_series(self._net_worth_accounts, sample_dates, self._to_usd)
         categories = [sample_date.isoformat() for sample_date, _ in series]
         values = [total for _, total in series]

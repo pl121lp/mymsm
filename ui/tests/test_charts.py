@@ -3,7 +3,8 @@ from decimal import Decimal
 
 from PySide6.QtCore import Qt
 
-from charts import build_line_chart, build_pie_chart, build_stacked_area_chart
+import charts
+from charts import build_bar_chart, build_line_chart, build_pie_chart, build_stacked_area_chart
 
 
 def test_build_pie_chart_creates_one_slice_per_category(qapp):
@@ -20,6 +21,21 @@ def test_build_pie_chart_creates_one_slice_per_category(qapp):
     assert slices[0].value() == 75.00
     assert slices[1].label() == "Groceries"
     assert slices[1].value() == 72.30
+
+
+def test_build_bar_chart_hover_shows_date_and_value(qapp, monkeypatch):
+    shown = []
+    monkeypatch.setattr(charts.QToolTip, "showText", lambda pos, text: shown.append(text))
+
+    chart = build_bar_chart("Net Worth Over Time (USD)", ["2024-07-01", "2024-09-01"], [1234.5, 6789.25])
+    series = chart.series()[0]
+    bar_set = series.barSets()[0]
+
+    series.hovered.emit(True, 0, bar_set)
+    assert shown == ["2024-07-01: 1,234.50"]
+
+    series.hovered.emit(True, 1, bar_set)
+    assert shown == ["2024-07-01: 1,234.50", "2024-09-01: 6,789.25"]
 
 
 def _points():

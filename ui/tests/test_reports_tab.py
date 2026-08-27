@@ -118,6 +118,14 @@ def test_selecting_net_worth_report_defaults_date_range_to_full_history(qapp, di
     assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-15"
 
 
+def test_net_worth_report_samples_every_other_month(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_net_worth_report(pane)
+    bar_set = pane.chart_view.chart().series()[0].barSets()[0]
+    # 2024-01-10 to 2024-03-15, stepping by 2 months: 01-10, 03-10, 03-15.
+    assert bar_set.count() == 3
+
+
 def test_updating_range_redraws_chart_for_narrower_window(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_net_worth_report(pane)
@@ -174,14 +182,14 @@ def test_net_worth_report_excludes_account_before_its_date_opened(qapp, dict_con
     # shouldn't drag that bar down by its full -50000 opening balance.
     assert bar_set.at(0) == pytest.approx(baseline_first)
     # By the final date it has been open and active, so it should count.
-    assert bar_set.at(1) < -40000
+    assert bar_set.at(bar_set.count() - 1) < -40000
 
 
 def test_net_worth_report_excludes_closed_account_after_its_last_transaction(qapp, dict_conn):
     baseline = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_net_worth_report(baseline)
     baseline_bar_set = baseline.chart_view.chart().series()[0].barSets()[0]
-    baseline_last = baseline_bar_set.at(1)
+    baseline_last = baseline_bar_set.at(baseline_bar_set.count() - 1)
 
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
@@ -202,7 +210,7 @@ def test_net_worth_report_excludes_closed_account_after_its_last_transaction(qap
 
     # The closed loan's stale -4800 balance shouldn't still be dragging
     # down net worth on the report's final (present-day) date.
-    assert bar_set.at(1) == pytest.approx(baseline_last)
+    assert bar_set.at(bar_set.count() - 1) == pytest.approx(baseline_last)
 
 
 def test_selecting_spending_report_shows_table_and_hides_chart(qapp, dict_conn):

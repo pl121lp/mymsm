@@ -190,7 +190,7 @@ def build_bar_chart(title, categories, values):
 
     def _on_bar_hovered(status, index, _bar_set=None):
         if status and 0 <= index < len(categories):
-            QToolTip.showText(QCursor.pos(), categories[index])
+            QToolTip.showText(QCursor.pos(), f"{categories[index]}: {values[index]:,.2f}")
         else:
             QToolTip.hideText()
 
