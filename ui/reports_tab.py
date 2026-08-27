@@ -311,9 +311,10 @@ class ReportsPane(QWidget):
 
         account_series = []
         earliest = latest = None
-        for account_id, _name, account_type, currency, _balance, _is_closed in accounts:
+        for account_id, _name, account_type, currency, _balance, is_closed in accounts:
             is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
             opening_balance = data.get_opening_balance(self._conn, account_id)
+            date_opened = data.get_date_opened(self._conn, account_id)
             try:
                 transactions = data.list_transactions(self._conn, account_id)
             except Exception as exc:
@@ -321,7 +322,7 @@ class ReportsPane(QWidget):
                 return
             history = compute_account_value_history(transactions, opening_balance, is_investment)
             initial_value = Decimal("0") if is_investment else (opening_balance or Decimal("0"))
-            account_series.append((currency, initial_value, history))
+            account_series.append((currency, initial_value, history, date_opened, is_closed))
             if history:
                 earliest = history[0][0] if earliest is None else min(earliest, history[0][0])
                 latest = history[-1][0] if latest is None else max(latest, history[-1][0])

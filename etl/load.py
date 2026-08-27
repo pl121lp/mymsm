@@ -51,12 +51,13 @@ def load(raw_dir: Path, db_path: Path) -> dict:
         conn.executemany(
             "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
             "currency, interest_category_id, loan_interest_rate, loan_payment_amount, "
-            "loan_payment_count) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "loan_payment_count, date_opened) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             [
                 (
                     a["account_id"], a["name"], a["account_type"], a["is_closed"],
                     a["opening_balance"], a["currency"], a["interest_category_id"],
                     a["loan_interest_rate"], a["loan_payment_amount"], a["loan_payment_count"],
+                    a["date_opened"],
                 )
                 for a in accounts
             ],

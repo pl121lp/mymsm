@@ -149,6 +149,62 @@ def test_updating_range_with_start_after_end_reports_error_and_keeps_chart(qapp,
     assert bar_set_after.count() == count_before
 
 
+def test_net_worth_report_excludes_account_before_its_date_opened(qapp, dict_conn):
+    baseline = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_net_worth_report(baseline)
+    baseline_bar_set = baseline.chart_view.chart().series()[0].barSets()[0]
+    baseline_first = baseline_bar_set.at(0)
+
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id, date_opened) VALUES "
+        "(5, 'New Loan', '6', FALSE, -50000.00, 'USD', NULL, '2024-02-01')"
+    )
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 5, NULL, NULL, '2024-02-15', 300.00, 'payment', NULL, NULL, NULL, NULL, NULL)"
+    )
+
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_net_worth_report(pane)
+    assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-15"
+    bar_set = pane.chart_view.chart().series()[0].barSets()[0]
+
+    # The loan didn't exist yet on the report's earliest date, so it
+    # shouldn't drag that bar down by its full -50000 opening balance.
+    assert bar_set.at(0) == pytest.approx(baseline_first)
+    # By the final date it has been open and active, so it should count.
+    assert bar_set.at(1) < -40000
+
+
+def test_net_worth_report_excludes_closed_account_after_its_last_transaction(qapp, dict_conn):
+    baseline = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_net_worth_report(baseline)
+    baseline_bar_set = baseline.chart_view.chart().series()[0].barSets()[0]
+    baseline_last = baseline_bar_set.at(1)
+
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id, date_opened) VALUES "
+        "(5, 'Old Closed Loan', '6', TRUE, -5000.00, 'USD', NULL, '2024-01-01')"
+    )
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        # Leaves a -4800 residual that was never reconciled to zero, as
+        # happens when a loan is closed out by a refinance.
+        "(5000, 5, NULL, NULL, '2024-01-20', 200.00, 'partial payoff', NULL, NULL, NULL, NULL, NULL)"
+    )
+
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_net_worth_report(pane)
+    assert pane.range_label.text() == "Showing 2024-01-10 to 2024-03-15"
+    bar_set = pane.chart_view.chart().series()[0].barSets()[0]
+
+    # The closed loan's stale -4800 balance shouldn't still be dragging
+    # down net worth on the report's final (present-day) date.
+    assert bar_set.at(1) == pytest.approx(baseline_last)
+
+
 def test_selecting_spending_report_shows_table_and_hides_chart(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     pane.show()

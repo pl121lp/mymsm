@@ -97,6 +97,10 @@ def build_accounts(
             opening_balance = convert_currency(row.get(ACCOUNTS["opening_balance"]) or "")
         except ValueError:
             opening_balance = Decimal("0")
+        try:
+            date_opened = convert_date(row.get(ACCOUNTS["date_opened"]) or "")
+        except ValueError:
+            date_opened = None
         currency_id = _to_int(row.get(ACCOUNTS["currency"]))
         interest_category_id = _to_int(row.get(ACCOUNTS["interest_category"]))
         if interest_category_id not in known_category_ids:
@@ -108,6 +112,7 @@ def build_accounts(
             "account_type": row.get(ACCOUNTS["account_type"]) or None,
             "is_closed": (row.get(ACCOUNTS["is_closed"]) or "").strip() in ("1", "true", "True"),
             "opening_balance": opening_balance,
+            "date_opened": date_opened,
             "currency": currencies.get(currency_id, PRIMARY_CURRENCY),
             "interest_category_id": interest_category_id,
             "loan_interest_rate": _to_loan_rate(

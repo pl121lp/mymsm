@@ -16,6 +16,7 @@ ACCOUNTS = {
     "account_type": "at",
     "is_closed": "fClosed",
     "opening_balance": "amtOpen",
+    "date_opened": "dtOpen",
     "currency": "hcrnc",
     "interest_category": "hcatInterest",
     "loan_interest_rate": "rateUser",

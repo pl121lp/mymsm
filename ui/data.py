@@ -95,6 +95,13 @@ def get_opening_balance(conn: duckdb.DuckDBPyConnection, account_id: int):
     return row[0] if row else None
 
 
+def get_date_opened(conn: duckdb.DuckDBPyConnection, account_id: int):
+    row = conn.execute(
+        "SELECT date_opened FROM accounts WHERE account_id = ?", [account_id]
+    ).fetchone()
+    return row[0] if row else None
+
+
 def get_loan_terms(conn: duckdb.DuckDBPyConnection, account_id: int) -> tuple | None:
     """(interest_rate, payment_amount, payment_count) for a loan account,
     as imported from Money -- interest_rate is a fraction (e.g. 0.05 for

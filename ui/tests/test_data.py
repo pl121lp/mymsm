@@ -3,6 +3,7 @@ from decimal import Decimal
 
 from data import (
     count_transactions_by_payee,
+    get_date_opened,
     get_loan_terms,
     get_transaction_row,
     list_accounts,
@@ -38,6 +39,15 @@ def test_list_accounts_only_closed_when_requested(conn):
     assert list_accounts(conn, only_closed=True) == [
         (2, "Old Card", "Credit", "USD", Decimal("0.00"), True),
     ]
+
+
+def test_get_date_opened_returns_stored_date(conn):
+    conn.execute("UPDATE accounts SET date_opened = '2001-10-15' WHERE account_id = 1")
+    assert get_date_opened(conn, 1) == date(2001, 10, 15)
+
+
+def test_get_date_opened_returns_none_when_unset(conn):
+    assert get_date_opened(conn, 1) is None
 
 
 def test_list_accounts_orders_by_account_type_then_name(conn):

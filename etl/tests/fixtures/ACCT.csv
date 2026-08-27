@@ -1,7 +1,7 @@
-hacct,szFull,at,fClosed,amtOpen,hcrnc,hcatInterest,rateUser,rateCalc,amtPI,iPmtMax
-1,Checking,Bank,0,100.00,45,,,,,
-2,Savings,Bank,0,0.00,38,,,,,
-3,Old Card,Credit,1,,,,,,,
-4,Brokerage,5,0,0.00,45,,,,,
-5,Car Loan,6,0,-1000.00,45,10,5.0,5.0,-250.00,48
-6,Old Mortgage,6,0,-2000.00,45,999,,4.75,-1200.00,360
+hacct,szFull,at,fClosed,amtOpen,hcrnc,hcatInterest,rateUser,rateCalc,amtPI,iPmtMax,dtOpen
+1,Checking,Bank,0,100.00,45,,,,,,2020-01-01T00:00
+2,Savings,Bank,0,0.00,38,,,,,,2020-01-01T00:00
+3,Old Card,Credit,1,,,,,,,,
+4,Brokerage,5,0,0.00,45,,,,,,2020-01-01T00:00
+5,Car Loan,6,0,-1000.00,45,10,5.0,5.0,-250.00,48,2021-06-01T00:00
+6,Old Mortgage,6,0,-2000.00,45,999,,4.75,-1200.00,360,+10000-02-28T00:00

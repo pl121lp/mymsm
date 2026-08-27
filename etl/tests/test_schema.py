@@ -67,6 +67,13 @@ def test_accounts_interest_category_id_rejects_unknown_category():
         )
 
 
+def test_accounts_table_has_date_opened_column():
+    conn = duckdb.connect(":memory:")
+    apply_schema(conn)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info('accounts')").fetchall()}
+    assert "date_opened" in columns
+
+
 def test_accounts_table_has_loan_term_columns():
     conn = duckdb.connect(":memory:")
     apply_schema(conn)

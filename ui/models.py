@@ -162,15 +162,36 @@ def generate_sample_dates(earliest, latest, months=3):
 def compute_net_worth_series(accounts, sample_dates, to_usd):
     """Total account value (USD) at each sample date.
 
-    accounts is an iterable of (currency, initial_value, history) tuples,
-    where history is a compute_account_value_history()-style ascending list
-    of (date, value) and initial_value is the value before its first entry
-    (opening balance for cash accounts, zero for investment accounts).
+    accounts is an iterable of (currency, initial_value, history, date_opened,
+    is_closed) tuples, where history is a compute_account_value_history()-style
+    ascending list of (date, value), initial_value is the value before its
+    first entry (opening balance for cash accounts, zero for investment
+    accounts), date_opened is the account's opening date (None if unknown),
+    and is_closed marks accounts that no longer exist today.
+
+    When date_opened is known, an account contributes nothing before it was
+    opened -- the earlier of date_opened and its first transaction, since
+    Money's recorded open date isn't always accurate -- so a nonzero
+    initial_value (e.g. a loan's original principal) doesn't get counted
+    for periods before the account existed. date_opened of None means
+    unknown, not "always existed": no lower bound is applied, matching the
+    old unconditional behavior. A closed account also contributes nothing
+    after its last recorded transaction, rather than carrying forward
+    whatever balance its history happened to end on (closed accounts often
+    don't reconcile to exactly zero, e.g. a loan paid off via refinance
+    with no offsetting transaction).
     """
     series = []
     for sample_date in sample_dates:
         total = Decimal("0")
-        for currency, initial_value, history in accounts:
+        for currency, initial_value, history, date_opened, is_closed in accounts:
+            first_active = date_opened
+            if date_opened is not None and history and history[0][0] < date_opened:
+                first_active = history[0][0]
+            if first_active is not None and sample_date < first_active:
+                continue
+            if is_closed and history and sample_date > history[-1][0]:
+                continue
             value = initial_value
             for txn_date, txn_value in history:
                 if txn_date > sample_date:

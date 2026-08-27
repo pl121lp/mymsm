@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -68,6 +69,23 @@ def test_load_resolves_loan_interest_and_linked_account_fields(tmp_path):
         conn.close()
     assert car_loan == (10,)
     assert principal == (1,)
+
+
+def test_load_resolves_date_opened(tmp_path):
+    db_path = tmp_path / "test.duckdb"
+    load(FIXTURES, db_path)
+    conn = duckdb.connect(str(db_path))
+    try:
+        checking = conn.execute(
+            "SELECT date_opened FROM accounts WHERE account_id = 1"
+        ).fetchone()
+        old_card = conn.execute(
+            "SELECT date_opened FROM accounts WHERE account_id = 3"
+        ).fetchone()
+    finally:
+        conn.close()
+    assert checking == (date(2020, 1, 1),)
+    assert old_card == (None,)
 
 
 def test_load_resolves_loan_terms(tmp_path):

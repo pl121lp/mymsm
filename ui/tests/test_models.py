@@ -640,8 +640,8 @@ def test_generate_sample_dates_clamps_month_end_overflow():
 
 def test_compute_net_worth_series_uses_initial_value_before_first_transaction():
     accounts = [
-        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))]),
-        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))]),
+        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))], None, False),
+        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))], None, False),
     ]
 
     def to_usd(currency, amount):
@@ -653,8 +653,8 @@ def test_compute_net_worth_series_uses_initial_value_before_first_transaction():
 
 def test_compute_net_worth_series_sums_accounts_converted_to_usd_as_of_each_date():
     accounts = [
-        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))]),
-        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))]),
+        ("USD", Decimal("100"), [(date(2024, 1, 15), Decimal("150"))], None, False),
+        ("SEK", Decimal("0"), [(date(2024, 1, 10), Decimal("1000"))], None, False),
     ]
 
     def to_usd(currency, amount):
@@ -668,11 +668,60 @@ def test_compute_net_worth_series_sums_accounts_converted_to_usd_as_of_each_date
 
 
 def test_compute_net_worth_series_holds_last_value_flat_after_final_transaction():
-    accounts = [("USD", Decimal("0"), [(date(2024, 1, 10), Decimal("500"))])]
+    accounts = [("USD", Decimal("0"), [(date(2024, 1, 10), Decimal("500"))], None, False)]
     series = compute_net_worth_series(
         accounts, [date(2024, 6, 1)], to_usd=lambda currency, amount: amount
     )
     assert series == [(date(2024, 6, 1), Decimal("500"))]
+
+
+def test_compute_net_worth_series_excludes_account_before_its_date_opened():
+    # opening_balance (-400000) shouldn't count for sample dates before the
+    # account was actually opened, even though it's the "initial_value"
+    # used once the account's history begins.
+    accounts = [
+        ("USD", Decimal("-400000"), [(date(2002, 1, 11), Decimal("-399000"))], date(2001, 10, 15), False),
+    ]
+    series = compute_net_worth_series(
+        accounts, [date(2001, 1, 1)], to_usd=lambda currency, amount: amount
+    )
+    assert series == [(date(2001, 1, 1), Decimal("0"))]
+
+
+def test_compute_net_worth_series_uses_first_transaction_when_earlier_than_date_opened():
+    # Money's recorded open date can itself postdate the first real
+    # transaction; the earlier of the two should win.
+    accounts = [
+        ("USD", Decimal("-1000"), [(date(2008, 3, 22), Decimal("-800"))], date(2008, 4, 1), False),
+    ]
+    series = compute_net_worth_series(
+        accounts, [date(2008, 3, 22)], to_usd=lambda currency, amount: amount
+    )
+    assert series == [(date(2008, 3, 22), Decimal("-800"))]
+
+
+def test_compute_net_worth_series_excludes_closed_account_after_its_last_transaction():
+    # A closed loan whose recorded history stops without reaching zero
+    # (e.g. paid off via refinance with no reconciling transaction)
+    # shouldn't keep dragging down net worth after it closed.
+    accounts = [
+        ("USD", Decimal("0"), [(date(2010, 1, 1), Decimal("-339204.15"))], None, True),
+    ]
+    series = compute_net_worth_series(
+        accounts, [date(2020, 1, 1)], to_usd=lambda currency, amount: amount
+    )
+    assert series == [(date(2020, 1, 1), Decimal("0"))]
+
+
+def test_compute_net_worth_series_still_holds_open_accounts_flat_after_last_transaction():
+    # is_closed=False accounts should keep the old carry-forward behavior.
+    accounts = [
+        ("USD", Decimal("0"), [(date(2010, 1, 1), Decimal("500"))], None, False),
+    ]
+    series = compute_net_worth_series(
+        accounts, [date(2020, 1, 1)], to_usd=lambda currency, amount: amount
+    )
+    assert series == [(date(2020, 1, 1), Decimal("500"))]
 
 
 def test_compute_spending_by_category_sorts_highest_spending_first():

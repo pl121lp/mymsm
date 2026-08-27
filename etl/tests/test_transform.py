@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
@@ -76,6 +77,26 @@ def test_build_accounts_defaults_missing_opening_balance_to_zero():
     accounts = build_accounts(FIXTURES)
     old_card = next(a for a in accounts if a["account_id"] == 3)
     assert old_card["opening_balance"] == Decimal("0")
+
+
+def test_build_accounts_parses_date_opened():
+    accounts = build_accounts(FIXTURES)
+    checking = next(a for a in accounts if a["account_id"] == 1)
+    assert checking["date_opened"] == date(2020, 1, 1)
+
+
+def test_build_accounts_treats_blank_date_opened_as_none():
+    accounts = build_accounts(FIXTURES)
+    old_card = next(a for a in accounts if a["account_id"] == 3)
+    assert old_card["date_opened"] is None
+
+
+def test_build_accounts_treats_moneys_unset_date_sentinel_as_none():
+    # Money represents "never set" dates as a far-future sentinel
+    # (+10000-02-28) rather than leaving the field blank.
+    accounts = build_accounts(FIXTURES)
+    old_mortgage = next(a for a in accounts if a["account_id"] == 6)
+    assert old_mortgage["date_opened"] is None
 
 
 def test_build_categories():
