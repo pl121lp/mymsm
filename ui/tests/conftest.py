@@ -12,14 +12,28 @@ import duckdb
 import pytest
 
 import app_settings
+import college_tuition_settings
+import payee_aliases
+import projection_settings
 from schema import apply_schema
 
 
 @pytest.fixture(autouse=True)
-def _isolate_app_settings(tmp_path, monkeypatch):
-    """Without this, any test that constructs a MainWindow would load from
-    and save to the real repo-root app_settings.json."""
-    monkeypatch.setattr(app_settings, "DEFAULT_SETTINGS_PATH", tmp_path / "app_settings.json")
+def _isolate_config_files(tmp_path, monkeypatch):
+    """Without this, any test that loads/saves persisted settings -- directly,
+    or indirectly by constructing a MainWindow/ReportsPane/DictionariesTab --
+    would read from and write to the real repo's config/ folder."""
+    config_dir = tmp_path / "config"
+    monkeypatch.setattr(app_settings, "DEFAULT_SETTINGS_PATH", config_dir / "app_settings.json")
+    monkeypatch.setattr(
+        projection_settings, "DEFAULT_SETTINGS_PATH", config_dir / "projection_settings.json"
+    )
+    monkeypatch.setattr(
+        college_tuition_settings,
+        "DEFAULT_SETTINGS_PATH",
+        config_dir / "college_tuition_settings.json",
+    )
+    monkeypatch.setattr(payee_aliases, "DEFAULT_ALIASES_PATH", config_dir / "payee_aliases.json")
 
 
 @pytest.fixture(scope="session")

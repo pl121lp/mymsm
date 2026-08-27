@@ -20,26 +20,26 @@ def _read(path):
         return json.load(f)
 
 
-def load_aliases(path=DEFAULT_ALIASES_PATH):
+def load_aliases(path=None):
     """Returns {canonical_payee_id: [absorbed_payee_id, ...]}."""
-    raw = _read(path)
+    raw = _read(path if path is not None else DEFAULT_ALIASES_PATH)
     return {int(k): list(v) for k, v in raw.get("groups", {}).items()}
 
 
-def load_canonical_names(path=DEFAULT_ALIASES_PATH):
+def load_canonical_names(path=None):
     """Returns {canonical_payee_id: overridden display name}."""
-    raw = _read(path)
+    raw = _read(path if path is not None else DEFAULT_ALIASES_PATH)
     return {int(k): v for k, v in raw.get("names", {}).items()}
 
 
-def save_aliases(groups, names, path=DEFAULT_ALIASES_PATH):
+def save_aliases(groups, names, path=None):
     """groups: {canonical_payee_id: [absorbed_payee_id, ...]}
     names: {canonical_payee_id: display name}"""
     payload = {
         "groups": {str(k): v for k, v in groups.items()},
         "names": {str(k): v for k, v in names.items()},
     }
-    path = Path(path)
+    path = Path(path) if path is not None else DEFAULT_ALIASES_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(payload, f, indent=2, sort_keys=True)

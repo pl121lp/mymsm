@@ -12,9 +12,9 @@ from pathlib import Path
 DEFAULT_SETTINGS_PATH = Path(__file__).resolve().parent.parent / "config" / "app_settings.json"
 
 
-def load_app_settings(path=DEFAULT_SETTINGS_PATH):
+def load_app_settings(path=None):
     """Returns a flat dict of saved app settings, or {} if unset."""
-    path = Path(path)
+    path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
     if not path.exists():
         return {}
     try:
@@ -24,9 +24,9 @@ def load_app_settings(path=DEFAULT_SETTINGS_PATH):
         return {}
 
 
-def save_app_settings(settings, path=DEFAULT_SETTINGS_PATH):
+def save_app_settings(settings, path=None):
     """settings: flat dict of app setting fields (JSON-serializable)."""
-    path = Path(path)
+    path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(settings, f, indent=2, sort_keys=True)

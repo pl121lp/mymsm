@@ -16,9 +16,9 @@ DEFAULT_SETTINGS_PATH = (
 )
 
 
-def load_college_tuition_settings(path=DEFAULT_SETTINGS_PATH):
+def load_college_tuition_settings(path=None):
     """Returns a flat dict of saved college tuition input fields, or {} if unset."""
-    path = Path(path)
+    path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
     if not path.exists():
         return {}
     try:
@@ -28,9 +28,9 @@ def load_college_tuition_settings(path=DEFAULT_SETTINGS_PATH):
         return {}
 
 
-def save_college_tuition_settings(settings, path=DEFAULT_SETTINGS_PATH):
+def save_college_tuition_settings(settings, path=None):
     """settings: flat dict of college tuition input fields (JSON-serializable)."""
-    path = Path(path)
+    path = Path(path) if path is not None else DEFAULT_SETTINGS_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(settings, f, indent=2, sort_keys=True)
