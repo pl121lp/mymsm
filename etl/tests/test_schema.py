@@ -74,6 +74,16 @@ def test_accounts_table_has_date_opened_column():
     assert "date_opened" in columns
 
 
+def test_accounts_table_has_is_favorite_column_defaulting_to_false():
+    conn = duckdb.connect(":memory:")
+    apply_schema(conn)
+    conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance) "
+        "VALUES (1, 'Checking', 'Bank', FALSE, 0)"
+    )
+    assert conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone() == (False,)
+
+
 def test_accounts_table_has_loan_term_columns():
     conn = duckdb.connect(":memory:")
     apply_schema(conn)

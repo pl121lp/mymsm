@@ -316,8 +316,8 @@ class MainWindow(QMainWindow):
         if not indexes:
             return
         row = indexes[0].row()
-        account_id, name, account_type, currency, balance, is_closed = self.account_model.account_at(
-            row
+        account_id, name, account_type, currency, balance, is_closed, _is_favorite = (
+            self.account_model.account_at(row)
         )
         opening_balance = data.get_opening_balance(self._conn, account_id)
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
@@ -353,7 +353,7 @@ class MainWindow(QMainWindow):
         if not indexes:
             self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
             return
-        account_id, name, account_type, currency, _, _ = self.account_model.account_at(
+        account_id, name, account_type, currency, _, _, _ = self.account_model.account_at(
             indexes[0].row()
         )
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
@@ -384,7 +384,7 @@ class MainWindow(QMainWindow):
         if not indexes:
             self.content_stack.setCurrentIndex(TRANSACTIONS_PAGE)
             return
-        account_id, name, account_type, currency, _, _ = self.account_model.account_at(
+        account_id, name, account_type, currency, _, _, _ = self.account_model.account_at(
             indexes[0].row()
         )
         opening_balance = data.get_opening_balance(self._conn, account_id)
@@ -462,8 +462,8 @@ class MainWindow(QMainWindow):
         if not indexes:
             return
         row = indexes[0].row()
-        account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
-            row
+        account_id, _name, account_type, _currency, _balance, _is_closed, _is_favorite = (
+            self.account_model.account_at(row)
         )
         dialog = AddRecordDialog(self._conn, account_id, account_type, parent=self)
         if dialog.exec() != AddRecordDialog.Accepted:
@@ -479,8 +479,8 @@ class MainWindow(QMainWindow):
         if not indexes:
             return
         row = indexes[0].row()
-        account_id, _name, _account_type, _currency, _balance, _is_closed = self.account_model.account_at(
-            row
+        account_id, _name, _account_type, _currency, _balance, _is_closed, _is_favorite = (
+            self.account_model.account_at(row)
         )
         dialog = AddGrantDialog(self._conn, account_id, parent=self)
         if dialog.exec() != AddGrantDialog.Accepted:
@@ -528,8 +528,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"Imported {dialog.imported_count} transaction(s).")
 
     def _on_toggle_closed_button_clicked(self, row):
-        account_id, name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
-            row
+        account_id, name, _account_type, _currency, _balance, is_closed, _is_favorite = (
+            self.account_model.account_at(row)
         )
         if not is_closed:
             reply = QMessageBox.question(
@@ -546,19 +546,31 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Account reopened." if is_closed else "Account closed.")
 
     def _account_context_actions(self, row):
-        _account_id, _name, _account_type, _currency, _balance, is_closed = self.account_model.account_at(
-            row
+        _account_id, _name, _account_type, _currency, _balance, is_closed, is_favorite = (
+            self.account_model.account_at(row)
         )
+        favorite_label = "Remove from Favorites" if is_favorite else "Add to Favorites"
+        actions = [(favorite_label, partial(self._on_toggle_favorite_button_clicked, row))]
         if not is_closed:
-            return [("Close Account", partial(self._on_toggle_closed_button_clicked, row))]
-        return [
-            ("Reopen Account", partial(self._on_toggle_closed_button_clicked, row)),
-            ("Delete Account", partial(self._on_delete_account_clicked, row)),
-        ]
+            actions.append(("Close Account", partial(self._on_toggle_closed_button_clicked, row)))
+        else:
+            actions.append(("Reopen Account", partial(self._on_toggle_closed_button_clicked, row)))
+            actions.append(("Delete Account", partial(self._on_delete_account_clicked, row)))
+        return actions
+
+    def _on_toggle_favorite_button_clicked(self, row):
+        account_id, _name, _account_type, _currency, _balance, _is_closed, is_favorite = (
+            self.account_model.account_at(row)
+        )
+        writes.set_account_favorite(self._conn, account_id, not is_favorite)
+        self._reload_accounts()
+        self.statusBar().showMessage(
+            "Removed from favorites." if is_favorite else "Added to favorites."
+        )
 
     def _on_delete_account_clicked(self, row):
-        account_id, name, _account_type, _currency, _balance, _is_closed = self.account_model.account_at(
-            row
+        account_id, name, _account_type, _currency, _balance, _is_closed, _is_favorite = (
+            self.account_model.account_at(row)
         )
         transaction_count = len(data.list_transactions(self._conn, account_id))
         reply = QMessageBox.question(
@@ -584,8 +596,8 @@ class MainWindow(QMainWindow):
         if not indexes:
             return
         account_row = indexes[0].row()
-        account_id, _name, account_type, _currency, _balance, _is_closed = self.account_model.account_at(
-            account_row
+        account_id, _name, account_type, _currency, _balance, _is_closed, _is_favorite = (
+            self.account_model.account_at(account_row)
         )
         transaction = self.transaction_model.transaction_at(row)
         if transaction[0] is None:
@@ -696,7 +708,7 @@ class MainWindow(QMainWindow):
             self.account_details_label.setText("")
             self.transaction_model.set_transactions([])
             return
-        account_id, name, account_type, currency, balance, _ = self.account_model.account_at(
+        account_id, name, account_type, currency, balance, _, _ = self.account_model.account_at(
             indexes[0].row()
         )
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE

@@ -55,6 +55,13 @@ def set_account_closed(conn, account_id, is_closed):
     )
 
 
+def set_account_favorite(conn, account_id, is_favorite):
+    """Sets an account's favorite status. Used for both marking and unmarking."""
+    conn.execute(
+        "UPDATE accounts SET is_favorite = ? WHERE account_id = ?", [is_favorite, account_id]
+    )
+
+
 def delete_account(conn, account_id):
     """Permanently deletes an account and its transactions (the transactions
     FK has no cascade, so they must be removed first).

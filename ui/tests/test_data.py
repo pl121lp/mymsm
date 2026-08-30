@@ -22,22 +22,45 @@ from data import (
 
 def test_list_accounts_excludes_closed_by_default(conn):
     assert list_accounts(conn) == [
-        (3, "Brokerage", "5", "SEK", Decimal("226.30"), False),
-        (1, "Checking", "Bank", "USD", Decimal("1047.70"), False),
+        (3, "Brokerage", "5", "SEK", Decimal("226.30"), False, False),
+        (1, "Checking", "Bank", "USD", Decimal("1047.70"), False, False),
     ]
 
 
 def test_list_accounts_includes_closed_when_requested(conn):
     assert list_accounts(conn, include_closed=True) == [
-        (3, "Brokerage", "5", "SEK", Decimal("226.30"), False),
-        (1, "Checking", "Bank", "USD", Decimal("1047.70"), False),
-        (2, "Old Card", "Credit", "USD", Decimal("0.00"), True),
+        (3, "Brokerage", "5", "SEK", Decimal("226.30"), False, False),
+        (1, "Checking", "Bank", "USD", Decimal("1047.70"), False, False),
+        (2, "Old Card", "Credit", "USD", Decimal("0.00"), True, False),
     ]
 
 
 def test_list_accounts_only_closed_when_requested(conn):
     assert list_accounts(conn, only_closed=True) == [
-        (2, "Old Card", "Credit", "USD", Decimal("0.00"), True),
+        (2, "Old Card", "Credit", "USD", Decimal("0.00"), True, False),
+    ]
+
+
+def test_list_accounts_puts_all_favorites_above_all_non_favorites(conn):
+    # A favorited credit-card account ("Visa", type "1") must outrank even a
+    # non-favorite checking/savings account ("Savings", type "0"), even
+    # though checking/savings sorts before credit in the type-group order.
+    # Within each of the two favorite/non-favorite groups, the existing
+    # type-then-name order still applies.
+    conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id, is_favorite) VALUES "
+        "(4, 'Visa', '1', FALSE, 0.00, 'USD', NULL, TRUE), "
+        "(5, 'Savings', '0', FALSE, 0.00, 'USD', NULL, FALSE), "
+        "(6, 'Zebra Fund', '5', FALSE, 0.00, 'USD', NULL, TRUE)"
+    )
+    names_in_order = [row[1] for row in list_accounts(conn)]
+    assert names_in_order == [
+        "Visa",         # favorite, type "1"
+        "Zebra Fund",   # favorite, type "5"
+        "Savings",      # non-favorite, type "0"
+        "Brokerage",    # non-favorite, type "5"
+        "Checking",     # non-favorite, type "Bank" (unrecognized -> last group)
     ]
 
 

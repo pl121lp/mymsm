@@ -16,6 +16,7 @@ from writes import (
     restore_transaction,
     restore_transaction_fields,
     set_account_closed,
+    set_account_favorite,
     update_account,
     update_transaction,
 )
@@ -46,6 +47,19 @@ def test_set_account_closed_reopens_closed_account(conn):
     # account_id 2 ("Old Card") is seeded as closed (see conftest.py).
     set_account_closed(conn, account_id=2, is_closed=False)
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 2").fetchone()
+    assert row == (False,)
+
+
+def test_set_account_favorite_marks_account_favorite(conn):
+    set_account_favorite(conn, account_id=1, is_favorite=True)
+    row = conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (True,)
+
+
+def test_set_account_favorite_unmarks_favorite_account(conn):
+    set_account_favorite(conn, account_id=1, is_favorite=True)
+    set_account_favorite(conn, account_id=1, is_favorite=False)
+    row = conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone()
     assert row == (False,)
 
 

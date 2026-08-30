@@ -311,7 +311,7 @@ class ReportsPane(QWidget):
 
         account_series = []
         earliest = latest = None
-        for account_id, _name, account_type, currency, _balance, is_closed in accounts:
+        for account_id, _name, account_type, currency, _balance, is_closed, _is_favorite in accounts:
             is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
             opening_balance = data.get_opening_balance(self._conn, account_id)
             date_opened = data.get_date_opened(self._conn, account_id)
@@ -466,7 +466,8 @@ class ReportsPane(QWidget):
         starting_value = sum(
             (
                 self._to_usd(currency, balance)
-                for _account_id, _name, account_type, currency, balance, _is_closed in accounts
+                for _account_id, _name, account_type, currency, balance, _is_closed, _is_favorite
+                in accounts
                 if account_type == INVESTMENT_ACCOUNT_TYPE
             ),
             start=Decimal("0"),
@@ -474,12 +475,14 @@ class ReportsPane(QWidget):
 
         asset_accounts = [
             (account_id, name)
-            for account_id, name, account_type, _currency, _balance, _is_closed in accounts
+            for account_id, name, account_type, _currency, _balance, _is_closed, _is_favorite
+            in accounts
             if account_type == ASSET_ACCOUNT_TYPE
         ]
         self._projection_asset_values = {
             account_id: self._to_usd(currency, balance)
-            for account_id, name, account_type, currency, balance, _is_closed in accounts
+            for account_id, name, account_type, currency, balance, _is_closed, _is_favorite
+            in accounts
             if account_type == ASSET_ACCOUNT_TYPE
         }
         self.projection_controls.set_house_accounts(asset_accounts)
@@ -557,12 +560,14 @@ class ReportsPane(QWidget):
 
         investment_accounts = [
             (account_id, name)
-            for account_id, name, account_type, _currency, _balance, _is_closed in accounts
+            for account_id, name, account_type, _currency, _balance, _is_closed, _is_favorite
+            in accounts
             if account_type == INVESTMENT_ACCOUNT_TYPE
         ]
         balances = {
             account_id: self._to_usd(currency, balance)
-            for account_id, _name, account_type, currency, balance, _is_closed in accounts
+            for account_id, _name, account_type, currency, balance, _is_closed, _is_favorite
+            in accounts
             if account_type == INVESTMENT_ACCOUNT_TYPE
         }
         self.college_tuition_controls.set_accounts(investment_accounts, balances)

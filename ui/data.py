@@ -60,7 +60,7 @@ def list_accounts(
                     THEN COALESCE(iv.value, 0)
                     ELSE a.opening_balance + COALESCE(cash.total, 0)
                END AS balance,
-               a.is_closed
+               a.is_closed, a.is_favorite
         FROM accounts a
         LEFT JOIN cash ON cash.account_id = a.account_id
         LEFT JOIN investment_value iv ON iv.account_id = a.account_id
@@ -75,7 +75,8 @@ def list_accounts(
     elif not include_closed:
         query += " WHERE a.is_closed = FALSE"
     query += """
-        ORDER BY CASE a.account_type
+        ORDER BY NOT a.is_favorite,
+                 CASE a.account_type
                      WHEN '0' THEN 0
                      WHEN '1' THEN 1
                      WHEN '5' THEN 2

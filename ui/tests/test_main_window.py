@@ -382,7 +382,7 @@ def test_context_actions_offer_close_for_open_account_row(qapp, conn):
     window = MainWindow(conn)
     # row 1 = Checking, an open account (see conn fixture ordering).
     labels = [label for label, _callback in window._account_context_actions(1)]
-    assert labels == ["Close Account"]
+    assert labels == ["Add to Favorites", "Close Account"]
 
 
 def test_context_actions_offer_reopen_and_delete_for_closed_account_row(qapp, conn):
@@ -393,18 +393,52 @@ def test_context_actions_offer_reopen_and_delete_for_closed_account_row(qapp, co
         if window.account_model.account_at(row)[1] == "Old Card"
     )
     labels = [label for label, _callback in window._account_context_actions(closed_row)]
-    assert labels == ["Reopen Account", "Delete Account"]
+    assert labels == ["Add to Favorites", "Reopen Account", "Delete Account"]
+
+
+def test_context_actions_offer_remove_from_favorites_for_favorite_account_row(qapp, conn):
+    conn.execute("UPDATE accounts SET is_favorite = TRUE WHERE account_id = 1")
+    window = MainWindow(conn)
+    # Favoriting Checking (account_id 1) moves it to row 0 (favorites sort
+    # above all non-favorites, regardless of account type).
+    labels = [label for label, _callback in window._account_context_actions(0)]
+    assert labels == ["Remove from Favorites", "Close Account"]
 
 
 def test_close_account_context_action_invokes_toggle_closed(qapp, conn, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
     window = MainWindow(conn)
 
-    _label, callback = window._account_context_actions(1)[0]
-    callback()
+    actions = dict(window._account_context_actions(1))
+    actions["Close Account"]()
 
     row = conn.execute("SELECT is_closed FROM accounts WHERE account_id = 1").fetchone()
     assert row == (True,)
+
+
+def test_favorite_context_action_marks_account_favorite_and_reloads(qapp, conn):
+    window = MainWindow(conn)
+
+    actions = dict(window._account_context_actions(1))
+    actions["Add to Favorites"]()
+
+    row = conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (True,)
+    assert window.statusBar().currentMessage() == "Added to favorites."
+
+
+def test_favorite_context_action_unmarks_favorite_account_and_reloads(qapp, conn):
+    conn.execute("UPDATE accounts SET is_favorite = TRUE WHERE account_id = 1")
+    window = MainWindow(conn)
+
+    # Favoriting Checking (account_id 1) moves it to row 0 (favorites sort
+    # above all non-favorites, regardless of account type).
+    actions = dict(window._account_context_actions(0))
+    actions["Remove from Favorites"]()
+
+    row = conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (False,)
+    assert window.statusBar().currentMessage() == "Removed from favorites."
 
 
 def test_delete_account_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):

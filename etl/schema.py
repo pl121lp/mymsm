@@ -13,6 +13,7 @@ CREATE TABLE accounts (
     name                 VARCHAR NOT NULL,
     account_type         VARCHAR,
     is_closed            BOOLEAN NOT NULL DEFAULT FALSE,
+    is_favorite          BOOLEAN NOT NULL DEFAULT FALSE,
     opening_balance      DECIMAL(18,4) NOT NULL DEFAULT 0,
     date_opened          DATE,
     currency             VARCHAR NOT NULL DEFAULT 'USD',

@@ -3,6 +3,8 @@ from decimal import Decimal
 
 from PySide6.QtCore import Qt
 
+import models
+import theme
 from models import (
     AccountTableModel,
     CategoryTransactionTableModel,
@@ -29,51 +31,51 @@ def _data(model, row, col):
 
 
 def test_account_type_is_translated_to_label():
-    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False)])
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, False)])
     assert _data(model, 0, 1) == "Checking/Savings"
 
 
 def test_unknown_account_type_falls_back_to_raw_value():
-    model = AccountTableModel([(1, "Mystery", "42", "USD", Decimal("0"), False)])
+    model = AccountTableModel([(1, "Mystery", "42", "USD", Decimal("0"), False, False)])
     assert _data(model, 0, 1) == "Type 42"
 
 
 def test_currency_column_shows_account_currency():
-    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("100.00"), False)])
+    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("100.00"), False, False)])
     assert _data(model, 0, 2) == "SEK"
 
 
 def test_balance_column_is_formatted_as_currency():
-    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("1047.70"), False)])
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("1047.70"), False, False)])
     assert _data(model, 0, 3) == "1,047.70"
 
 
 def test_negative_balance_is_formatted_as_currency():
-    model = AccountTableModel([(1, "Credit Card", "1", "USD", Decimal("-918.98"), False)])
+    model = AccountTableModel([(1, "Credit Card", "1", "USD", Decimal("-918.98"), False, False)])
     assert _data(model, 0, 3) == "-918.98"
 
 
 def test_usd_balance_is_unaffected_by_exchange_rate():
-    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False)])
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, False)])
     model.set_exchange_rates({"SEK": Decimal("0.10")})
     assert _data(model, 0, 3) == "100.00"
 
 
 def test_non_usd_balance_is_converted_using_exchange_rate():
-    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("1000.00"), False)])
+    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("1000.00"), False, False)])
     model.set_exchange_rates({"SEK": Decimal("0.10")})
     assert _data(model, 0, 3) == "100.00"
 
 
 def test_non_usd_balance_is_unconverted_when_no_rate_known():
-    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("1000.00"), False)])
+    model = AccountTableModel([(1, "Savings", "0", "SEK", Decimal("1000.00"), False, False)])
     assert _data(model, 0, 3) == "1,000.00"
 
 
 def test_total_usd_sums_converted_balances():
     model = AccountTableModel([
-        (1, "Checking", "0", "USD", Decimal("100.00"), False),
-        (2, "Savings", "0", "SEK", Decimal("1000.00"), False),
+        (1, "Checking", "0", "USD", Decimal("100.00"), False, False),
+        (2, "Savings", "0", "SEK", Decimal("1000.00"), False, False),
     ])
     model.set_exchange_rates({"SEK": Decimal("0.10")})
     assert model.total_usd() == Decimal("200.00")
@@ -81,16 +83,16 @@ def test_total_usd_sums_converted_balances():
 
 def test_total_usd_excludes_closed_accounts():
     model = AccountTableModel([
-        (1, "Checking", "0", "USD", Decimal("100.00"), False),
-        (2, "Old Card", "1", "USD", Decimal("500.00"), True),
+        (1, "Checking", "0", "USD", Decimal("100.00"), False, False),
+        (2, "Old Card", "1", "USD", Decimal("500.00"), True, False),
     ])
     assert model.total_usd() == Decimal("100.00")
 
 
 def test_account_model_sort_by_name_ascending():
     model = AccountTableModel([
-        (1, "Savings", "0", "USD", Decimal("100.00"), False),
-        (2, "Checking", "0", "USD", Decimal("50.00"), False),
+        (1, "Savings", "0", "USD", Decimal("100.00"), False, False),
+        (2, "Checking", "0", "USD", Decimal("50.00"), False, False),
     ])
     model.sort(0, Qt.AscendingOrder)
     assert _data(model, 0, 0) == "Checking"
@@ -99,8 +101,8 @@ def test_account_model_sort_by_name_ascending():
 
 def test_account_model_sort_by_name_is_case_insensitive():
     model = AccountTableModel([
-        (1, "savings", "0", "USD", Decimal("100.00"), False),
-        (2, "Checking", "0", "USD", Decimal("50.00"), False),
+        (1, "savings", "0", "USD", Decimal("100.00"), False, False),
+        (2, "Checking", "0", "USD", Decimal("50.00"), False, False),
     ])
     model.sort(0, Qt.AscendingOrder)
     assert _data(model, 0, 0) == "Checking"
@@ -109,8 +111,8 @@ def test_account_model_sort_by_name_is_case_insensitive():
 
 def test_account_model_sort_by_type_descending():
     model = AccountTableModel([
-        (1, "Checking", "0", "USD", Decimal("100.00"), False),
-        (2, "Card", "1", "USD", Decimal("50.00"), False),
+        (1, "Checking", "0", "USD", Decimal("100.00"), False, False),
+        (2, "Card", "1", "USD", Decimal("50.00"), False, False),
     ])
     model.sort(1, Qt.DescendingOrder)
     assert _data(model, 0, 1) == "Credit"
@@ -121,8 +123,8 @@ def test_account_model_sort_by_balance_uses_usd_converted_value():
     # Raw balance order is Checking(300) < Savings(2000), but converted to USD
     # (Savings at 0.10 -> 200) the order flips: Savings(200) < Checking(300).
     model = AccountTableModel([
-        (1, "Checking", "0", "USD", Decimal("300.00"), False),
-        (2, "Savings", "0", "SEK", Decimal("2000.00"), False),
+        (1, "Checking", "0", "USD", Decimal("300.00"), False, False),
+        (2, "Savings", "0", "SEK", Decimal("2000.00"), False, False),
     ])
     model.set_exchange_rates({"SEK": Decimal("0.10")})
     model.sort(3, Qt.AscendingOrder)
@@ -137,13 +139,45 @@ def test_account_model_sort_on_empty_accounts_does_not_crash():
 
 
 def test_open_account_name_has_no_prefix():
-    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False)])
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, False)])
     assert _data(model, 0, 0) == "Checking"
 
 
 def test_closed_account_name_is_prefixed_with_closed():
-    model = AccountTableModel([(1, "Old Card", "1", "USD", Decimal("0.00"), True)])
+    model = AccountTableModel([(1, "Old Card", "1", "USD", Decimal("0.00"), True, False)])
     assert _data(model, 0, 0) == "(CLOSED) Old Card"
+
+
+def test_favorite_account_row_has_gray_background():
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, True)])
+    color = model.data(model.index(0, 0), Qt.BackgroundRole)
+    assert color is not None
+
+
+def test_non_favorite_account_row_has_no_background_override():
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, False)])
+    assert model.data(model.index(0, 0), Qt.BackgroundRole) is None
+
+
+def test_favorite_account_row_keeps_default_foreground_color():
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, True)])
+    assert model.data(model.index(0, 0), Qt.ForegroundRole) is None
+
+
+def test_favorite_account_row_uses_light_theme_gray_background_in_light_mode(qapp):
+    model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, True)])
+    color = model.data(model.index(0, 0), Qt.BackgroundRole)
+    assert color == models.FAVORITE_BACKGROUND_LIGHT
+
+
+def test_favorite_account_row_uses_dark_theme_gray_background_in_dark_mode(qapp):
+    theme.apply_theme(qapp, True)
+    try:
+        model = AccountTableModel([(1, "Checking", "0", "USD", Decimal("100.00"), False, True)])
+        color = model.data(model.index(0, 0), Qt.BackgroundRole)
+        assert color == models.FAVORITE_BACKGROUND_DARK
+    finally:
+        theme.apply_theme(qapp, False)
 
 
 def test_activity_buy_and_sell_are_translated_to_labels():

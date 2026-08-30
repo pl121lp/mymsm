@@ -4,8 +4,9 @@ from datetime import date
 from decimal import Decimal
 
 from PySide6.QtCore import QAbstractListModel, QAbstractTableModel, Qt
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QColor, QFont
 
+import theme
 from dateutils import add_months
 from data import (
     ASSET_ACCOUNT_TYPE,
@@ -16,6 +17,9 @@ from data import (
     SELL_ACTIVITY,
     VEST_ACTIVITY,
 )
+
+FAVORITE_BACKGROUND_LIGHT = QColor(225, 225, 225)
+FAVORITE_BACKGROUND_DARK = QColor(70, 70, 70)
 
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
@@ -351,7 +355,7 @@ def compute_assets_and_investments(accounts, to_usd):
     overall total balance (assets + investments - loans).
 
     accounts is data.list_accounts()-style rows: (account_id, name,
-    account_type, currency, balance, is_closed). Loan balances are stored
+    account_type, currency, balance, is_closed, is_favorite). Loan balances are stored
     negative (debt owed); shown here as a positive value that is subtracted
     from the total.
 
@@ -365,7 +369,7 @@ def compute_assets_and_investments(accounts, to_usd):
     investments = []
     assets = []
     loans = []
-    for _account_id, name, account_type, currency, balance, _is_closed in accounts:
+    for _account_id, name, account_type, currency, balance, _is_closed, _is_favorite in accounts:
         usd_value = to_usd(currency, balance)
         if account_type == INVESTMENT_ACCOUNT_TYPE:
             investments.append((name, usd_value))
@@ -467,7 +471,7 @@ class AccountTableModel(QAbstractTableModel):
         return sum(
             (
                 self.to_usd(currency, balance)
-                for _, _, _, currency, balance, is_closed in self._accounts
+                for _, _, _, currency, balance, is_closed, _is_favorite in self._accounts
                 if not is_closed
             ),
             start=Decimal("0"),
@@ -509,9 +513,15 @@ class AccountTableModel(QAbstractTableModel):
         return None
 
     def data(self, index, role=Qt.DisplayRole):
+        _, name, account_type, currency, balance, is_closed, is_favorite = self._accounts[
+            index.row()
+        ]
+        if role == Qt.BackgroundRole:
+            if is_favorite:
+                return FAVORITE_BACKGROUND_DARK if theme.is_dark() else FAVORITE_BACKGROUND_LIGHT
+            return None
         if role != Qt.DisplayRole:
             return None
-        _, name, account_type, currency, balance, is_closed = self._accounts[index.row()]
         values = [
             f"(CLOSED) {name}" if is_closed else name,
             account_type_label(account_type),

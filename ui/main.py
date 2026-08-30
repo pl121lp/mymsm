@@ -35,6 +35,14 @@ def main():
         )
         sys.exit(1)
 
+    # Backfills is_favorite on a pre-existing money.duckdb (etl/schema.py's version
+    # of this column is NOT NULL, but DuckDB can't add that constraint via ALTER
+    # COLUMN on a table -- like accounts -- that other tables reference by
+    # foreign key, so this column stays nullable on migrated databases; every
+    # write path (add_account's INSERT, set_account_favorite) always supplies an
+    # explicit boolean, so a NULL can't actually occur in practice).
+    conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE")
+
     window = MainWindow(conn)
     window.showMaximized()
     sys.exit(app.exec())
