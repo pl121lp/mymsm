@@ -17,6 +17,7 @@ from data import (
     list_securities,
     list_security_history,
     list_transactions,
+    list_upcoming_vests,
     search_transactions,
 )
 
@@ -331,6 +332,47 @@ def test_list_investment_prices_excludes_zero_priced_rsu_tax_withholding_sales(d
     )
     names = {row[0] for row in list_investment_prices(dict_conn)}
     assert "RSU Grant A" not in names
+
+
+def test_list_upcoming_vests_returns_future_vest_with_latest_known_price(dict_conn):
+    # Brokerage A / security 500 already has priced Buy(1.10)/Buy(2.10)/Sell(3.01)
+    # trades in dict_conn, so its latest known price is the 2024-03-01 sell at 22.63.
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3500, 3, NULL, NULL, '2099-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL)"
+    )
+    assert list_upcoming_vests(dict_conn) == [
+        ("Brokerage A", "Vanguard Total Stock Market Index", date(2099, 6, 15), Decimal("5.0"), Decimal("22.63"), "USD"),
+    ]
+
+
+def test_list_upcoming_vests_excludes_vests_already_reached(dict_conn):
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3500, 3, NULL, NULL, '2024-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL)"
+    )
+    assert list_upcoming_vests(dict_conn) == []
+
+
+def test_list_upcoming_vests_returns_none_price_when_security_never_priced(dict_conn):
+    dict_conn.execute("INSERT INTO securities VALUES (502, 'RSU Grant A')")
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3500, 3, NULL, NULL, '2099-06-15', 0.00, NULL, 502, '18', 5.0, NULL, NULL)"
+    )
+    assert list_upcoming_vests(dict_conn) == [
+        ("Brokerage A", "RSU Grant A", date(2099, 6, 15), Decimal("5.0"), None, "USD"),
+    ]
+
+
+def test_list_upcoming_vests_orders_by_vest_date_ascending(dict_conn):
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3500, 3, NULL, NULL, '2099-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL), "
+        "(3501, 3, NULL, NULL, '2028-01-01', 0.00, NULL, 500, '18', 2.0, NULL, NULL)"
+    )
+    vest_dates = [row[2] for row in list_upcoming_vests(dict_conn)]
+    assert vest_dates == [date(2028, 1, 1), date(2099, 6, 15)]
 
 
 def test_count_transactions_by_payee_ignores_null_payee(dict_conn):

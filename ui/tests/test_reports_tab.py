@@ -16,6 +16,7 @@ from projection_settings import (
     save_projection_settings as _real_save_projection_settings,
 )
 from reports_tab import REPORTS, ReportsPane
+from rsu_tax_settings import load_rsu_tax_settings, save_rsu_tax_settings
 
 
 def _select_net_worth_report(pane):
@@ -1519,5 +1520,159 @@ def test_selecting_other_report_after_assets_and_investments_hides_its_table(qap
     _select_net_worth_report(pane)
 
     assert not pane.assets_investments_table_view.isVisible()
+    assert pane.range_controls_row.isVisible()
+    assert pane.range_label.isVisible()
+
+
+def _select_rsu_vesting_forecast_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(8, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _add_future_vest(conn):
+    # Brokerage A / security 500 already has priced Buy/Buy/Sell trades in
+    # dict_conn, so its latest known price (22.63, from the 2024-03-01 sell)
+    # is what the forecast should use for this future vest's estimated value.
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(3500, 3, NULL, NULL, '2099-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL)"
+    )
+
+
+def test_reports_list_shows_rsu_vesting_forecast_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.rowCount() == len(REPORTS)
+    assert pane.list_model.data(pane.list_model.index(8, 0)) == "RSU Vesting Forecast"
+
+
+def test_selecting_rsu_vesting_forecast_report_shows_table_hides_others(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_net_worth_report(pane)
+    assert pane.chart_view.isVisible()
+
+    _select_rsu_vesting_forecast_report(pane)
+    assert pane.rsu_vesting_forecast_table_view.isVisible()
+    assert not pane.rsu_vesting_charts_panel.isVisible()
+    assert not pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    assert not pane.investment_table_view.isVisible()
+    assert not pane.assets_investments_table_view.isVisible()
+    assert not pane.recurring_table_view.isVisible()
+    assert not pane.range_controls_row.isVisible()
+    assert not pane.range_label.isVisible()
+    assert pane.view_selector_row.isVisible()
+    assert pane.rsu_vesting_controls_row.isVisible()
+
+
+def test_rsu_vesting_forecast_report_view_selector_offers_table_and_chart(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_rsu_vesting_forecast_report(pane)
+    items = [pane.view_selector.itemText(i) for i in range(pane.view_selector.count())]
+    assert items == ["Table", "Chart"]
+
+
+def test_rsu_vesting_forecast_report_lists_upcoming_vests_with_estimated_value(qapp, dict_conn):
+    _add_future_vest(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_rsu_vesting_forecast_report(pane)
+
+    view = pane.rsu_vesting_forecast_table_view
+    assert _table_cell(view, 0, 0) == "2099-06-15"
+    assert _table_cell(view, 0, 1) == "Brokerage A"
+    assert _table_cell(view, 0, 2) == "Vanguard Total Stock Market Index"
+    assert _table_cell(view, 0, 3) == "5.0000"
+    assert _table_cell(view, 0, 5) == "113.15"
+    assert _table_cell(view, 1, 2) == "Total 2099"
+    assert _table_cell(view, 1, 5) == "113.15"
+    assert _table_cell(view, 2, 2) == "Total"
+    assert _table_cell(view, 2, 5) == "113.15"
+
+    model = pane.rsu_vesting_forecast_table_model
+    assert model.data(model.index(1, 2), Qt.FontRole).bold()
+    assert model.data(model.index(0, 2), Qt.FontRole) is None
+
+
+def test_rsu_vesting_forecast_report_defaults_tax_rate_to_35_percent(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_rsu_vesting_forecast_report(pane)
+    assert pane.rsu_vesting_tax_rate_spinbox.value() == 35.0
+
+
+def test_rsu_vesting_forecast_report_shows_shares_taxed_and_tax_columns(qapp, dict_conn):
+    _add_future_vest(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_rsu_vesting_forecast_report(pane)
+
+    pane.rsu_vesting_tax_rate_spinbox.setValue(20.0)
+
+    view = pane.rsu_vesting_forecast_table_view
+    assert _table_cell(view, 0, 4) == "1.0000"  # shares taxed: 5 shares * 20%
+    assert _table_cell(view, 0, 5) == "113.15"  # est. value, unaffected by tax rate
+    assert _table_cell(view, 0, 6) == "22.63"  # est. tax: 113.15 * 20%
+    assert _table_cell(view, 0, 7) == "90.52"  # net of tax: 113.15 - 22.63
+
+
+def test_changing_rsu_vesting_tax_rate_persists_setting(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_rsu_vesting_forecast_report(pane)
+
+    pane.rsu_vesting_tax_rate_spinbox.setValue(22.5)
+
+    assert load_rsu_tax_settings()["tax_rate"] == 22.5
+
+
+def test_reselecting_rsu_vesting_forecast_report_loads_persisted_tax_rate(qapp, dict_conn):
+    save_rsu_tax_settings({"tax_rate": 28.0})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_rsu_vesting_forecast_report(pane)
+    assert pane.rsu_vesting_tax_rate_spinbox.value() == 28.0
+
+
+def test_switching_rsu_vesting_forecast_to_chart_shows_charts_and_hides_table(qapp, dict_conn):
+    _add_future_vest(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_rsu_vesting_forecast_report(pane)
+
+    pane.view_selector.setCurrentText("Chart")
+
+    assert pane.rsu_vesting_charts_panel.isVisible()
+    assert not pane.rsu_vesting_forecast_table_view.isVisible()
+    shares_chart = pane.rsu_vesting_shares_chart_view.chart()
+    value_chart = pane.rsu_vesting_value_chart_view.chart()
+    assert len(shares_chart.series()) == 2
+    assert len(value_chart.series()) == 2
+    assert shares_chart.series()[0].count() == 1
+    assert shares_chart.series()[1].count() == 1
+    assert value_chart.series()[0].count() == 1
+    assert value_chart.series()[1].count() == 1
+
+
+def test_changing_rsu_vesting_tax_rate_rerenders_visible_charts(qapp, dict_conn):
+    _add_future_vest(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_rsu_vesting_forecast_report(pane)
+    pane.view_selector.setCurrentText("Chart")
+
+    pane.rsu_vesting_tax_rate_spinbox.setValue(20.0)
+
+    tax_series = pane.rsu_vesting_value_chart_view.chart().series()[1]
+    assert round(tax_series.at(tax_series.count() - 1).y(), 2) == 22.63  # 113.15 * 20%
+
+
+def test_selecting_other_report_after_rsu_vesting_forecast_hides_its_table(qapp, dict_conn):
+    _add_future_vest(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_rsu_vesting_forecast_report(pane)
+    _select_net_worth_report(pane)
+
+    assert not pane.rsu_vesting_forecast_table_view.isVisible()
+    assert not pane.rsu_vesting_charts_panel.isVisible()
+    assert not pane.rsu_vesting_controls_row.isVisible()
     assert pane.range_controls_row.isVisible()
     assert pane.range_label.isVisible()

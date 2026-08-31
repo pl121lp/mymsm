@@ -353,6 +353,42 @@ def list_investment_prices(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(query, [BUY_ACTIVITY, SELL_ACTIVITY, RSU_SELL_ACTIVITY]).fetchall()
 
 
+def list_upcoming_vests(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    """Every not-yet-reached Vested (activity 18) transaction across all
+    accounts, for the RSU vesting forecast report. Each is paired with its
+    security's latest known price -- the same "most recent priced trade at
+    or before today, per account+security" lookup list_accounts() uses for
+    current holdings value. Rows are (account_name, security_name, vest_date,
+    quantity, price, currency); price is NULL when the security has no
+    priced trade yet."""
+    query = """
+        WITH signed_holdings AS (
+            SELECT t.account_id, t.security_id, t.txn_date, t.price
+            FROM transactions t
+            WHERE t.security_id IS NOT NULL AND t.activity IN (?, ?, ?, ?)
+                  AND t.txn_date <= CURRENT_DATE
+        ),
+        latest_price AS (
+            SELECT account_id, security_id, price,
+                   ROW_NUMBER() OVER (
+                       PARTITION BY account_id, security_id ORDER BY txn_date DESC
+                   ) AS rn
+            FROM signed_holdings
+            WHERE price IS NOT NULL AND price > 0
+        )
+        SELECT a.name, s.name, t.txn_date, t.quantity, lp.price, a.currency
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        JOIN securities s ON s.security_id = t.security_id
+        LEFT JOIN latest_price lp
+            ON lp.account_id = t.account_id AND lp.security_id = t.security_id AND lp.rn = 1
+        WHERE t.activity = ? AND t.txn_date > CURRENT_DATE
+        ORDER BY t.txn_date, a.name, s.name
+    """
+    params = [BUY_ACTIVITY, SELL_ACTIVITY, VEST_ACTIVITY, RSU_SELL_ACTIVITY, VEST_ACTIVITY]
+    return conn.execute(query, params).fetchall()
+
+
 def list_security_history(
     conn: duckdb.DuckDBPyConnection, security_id: int
 ) -> list[tuple]:

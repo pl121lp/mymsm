@@ -46,6 +46,7 @@ from models import (
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
     RecurringSubscriptionsTableModel,
+    RsuVestingForecastTableModel,
     SpendingByCategoryTableModel,
     compute_account_value_history,
     compute_assets_and_investments,
@@ -54,14 +55,20 @@ from models import (
     compute_investment_analysis,
     compute_net_worth_series,
     compute_recurring_transactions,
+    compute_rsu_vesting_cumulative_series,
+    compute_rsu_vesting_forecast,
     compute_spending_by_category,
     generate_sample_dates,
 )
 import theme
+from form_controls import percent_spinbox
 from projection import ProjectionInputs, compute_projection
 from projection_controls import ProjectionControlsPanel, default_projection_values
 from projection_settings import load_projection_settings, save_projection_settings
+from rsu_tax_settings import load_rsu_tax_settings, save_rsu_tax_settings
 from table_copy import enable_cell_copy
+
+RSU_DEFAULT_TAX_RATE = 35.0
 
 NET_WORTH_REPORT_ID = "net_worth_over_time"
 SPENDING_BY_CATEGORY_REPORT_ID = "spending_by_category"
@@ -71,6 +78,7 @@ NET_WORTH_PROJECTION_REPORT_ID = "net_worth_projection"
 COLLEGE_TUITION_PROJECTION_REPORT_ID = "college_tuition_projection"
 ASSETS_AND_INVESTMENTS_REPORT_ID = "assets_and_investments"
 RECURRING_SUBSCRIPTIONS_REPORT_ID = "recurring_subscriptions"
+RSU_VESTING_FORECAST_REPORT_ID = "rsu_vesting_forecast"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
@@ -80,6 +88,7 @@ REPORTS = [
     (COLLEGE_TUITION_PROJECTION_REPORT_ID, "College Tuition Projection"),
     (ASSETS_AND_INVESTMENTS_REPORT_ID, "Assets and investments"),
     (RECURRING_SUBSCRIPTIONS_REPORT_ID, "Recurring / Subscriptions"),
+    (RSU_VESTING_FORECAST_REPORT_ID, "RSU Vesting Forecast"),
 ]
 
 
@@ -125,6 +134,7 @@ class ReportsPane(QWidget):
         self._assets_investments_breakdown = []
         self._recurring_transactions = []
         self._recurring_worker = None
+        self._rsu_vests = []
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -230,6 +240,36 @@ class ReportsPane(QWidget):
         self.recurring_table_view.setVisible(False)
         enable_cell_copy(self.recurring_table_view)
 
+        self.rsu_vesting_forecast_table_model = RsuVestingForecastTableModel()
+        self.rsu_vesting_forecast_table_view = QTableView()
+        self.rsu_vesting_forecast_table_view.setModel(self.rsu_vesting_forecast_table_model)
+        self.rsu_vesting_forecast_table_view.horizontalHeader().setStretchLastSection(True)
+        self.rsu_vesting_forecast_table_view.setVisible(False)
+        enable_cell_copy(self.rsu_vesting_forecast_table_view)
+
+        self.rsu_vesting_shares_chart_view = QChartView()
+        self.rsu_vesting_shares_chart_view.setRenderHint(QPainter.Antialiasing)
+        self.rsu_vesting_shares_chart_view.setChart(_empty_chart())
+        self.rsu_vesting_value_chart_view = QChartView()
+        self.rsu_vesting_value_chart_view.setRenderHint(QPainter.Antialiasing)
+        self.rsu_vesting_value_chart_view.setChart(_empty_chart())
+        self.rsu_vesting_charts_panel = QWidget()
+        rsu_vesting_charts_layout = QVBoxLayout(self.rsu_vesting_charts_panel)
+        rsu_vesting_charts_layout.setContentsMargins(0, 0, 0, 0)
+        rsu_vesting_charts_layout.addWidget(self.rsu_vesting_shares_chart_view)
+        rsu_vesting_charts_layout.addWidget(self.rsu_vesting_value_chart_view)
+        self.rsu_vesting_charts_panel.setVisible(False)
+
+        self.rsu_vesting_tax_rate_spinbox = percent_spinbox(RSU_DEFAULT_TAX_RATE)
+        self.rsu_vesting_tax_rate_spinbox.valueChanged.connect(self._on_rsu_vesting_tax_rate_changed)
+        self.rsu_vesting_controls_row = QWidget()
+        rsu_vesting_controls_layout = QHBoxLayout(self.rsu_vesting_controls_row)
+        rsu_vesting_controls_layout.setContentsMargins(0, 0, 0, 0)
+        rsu_vesting_controls_layout.addWidget(QLabel("Tax Rate:"))
+        rsu_vesting_controls_layout.addWidget(self.rsu_vesting_tax_rate_spinbox)
+        rsu_vesting_controls_layout.addStretch()
+        self.rsu_vesting_controls_row.setVisible(False)
+
         self.recurring_busy_indicator = BusyIndicator()
         self.recurring_status_row = QWidget()
         recurring_status_layout = QHBoxLayout(self.recurring_status_row)
@@ -297,9 +337,12 @@ class ReportsPane(QWidget):
         chart_layout.addWidget(self.assets_investments_table_view)
         chart_layout.addWidget(self.recurring_status_row)
         chart_layout.addWidget(self.recurring_table_view)
+        chart_layout.addWidget(self.rsu_vesting_forecast_table_view)
+        chart_layout.addWidget(self.rsu_vesting_charts_panel, 1)
         chart_layout.addWidget(self.assets_investments_bar_chart_view, 1)
         chart_layout.addWidget(self.assets_investments_pies_panel, 1)
         chart_layout.addWidget(self.investment_controls_row)
+        chart_layout.addWidget(self.rsu_vesting_controls_row)
         chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.projection_controls_scroll_area, 1)
         chart_layout.addWidget(self.college_tuition_controls_scroll_area, 1)
@@ -326,6 +369,7 @@ class ReportsPane(QWidget):
             self.investment_table_model.set_investments([])
             self.assets_investments_table_model.set_rows([])
             self.recurring_table_model.set_recurring([])
+            self.rsu_vesting_forecast_table_model.set_rows([])
             self.recurring_status_row.setVisible(False)
             self.assets_investments_bar_chart_view.setChart(_empty_chart())
             self.assets_investments_bar_chart_view.setVisible(False)
@@ -344,7 +388,10 @@ class ReportsPane(QWidget):
         is_college_tuition_report = report_id == COLLEGE_TUITION_PROJECTION_REPORT_ID
         is_assets_investments_report = report_id == ASSETS_AND_INVESTMENTS_REPORT_ID
         is_recurring_report = report_id == RECURRING_SUBSCRIPTIONS_REPORT_ID
-        self.view_selector_row.setVisible(is_category_report or is_assets_investments_report)
+        is_rsu_vesting_report = report_id == RSU_VESTING_FORECAST_REPORT_ID
+        self.view_selector_row.setVisible(
+            is_category_report or is_assets_investments_report or is_rsu_vesting_report
+        )
         self.custom_categories_button.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
@@ -359,6 +406,12 @@ class ReportsPane(QWidget):
             self.view_selector.addItems(["Table", "Bar Chart", "Pie Charts"])
             self.view_selector.setCurrentIndex(0)
             self.view_selector.blockSignals(False)
+        elif is_rsu_vesting_report:
+            self.view_selector.blockSignals(True)
+            self.view_selector.clear()
+            self.view_selector.addItems(["Table", "Chart"])
+            self.view_selector.setCurrentIndex(0)
+            self.view_selector.blockSignals(False)
         self.chart_view.setVisible(
             report_id
             in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID, COLLEGE_TUITION_PROJECTION_REPORT_ID)
@@ -370,13 +423,22 @@ class ReportsPane(QWidget):
         self.college_tuition_controls_scroll_area.setVisible(is_college_tuition_report)
         self.assets_investments_table_view.setVisible(is_assets_investments_report)
         self.recurring_table_view.setVisible(is_recurring_report)
+        self.rsu_vesting_forecast_table_view.setVisible(is_rsu_vesting_report)
+        self.rsu_vesting_controls_row.setVisible(is_rsu_vesting_report)
+        self.rsu_vesting_charts_panel.setVisible(False)
         self.assets_investments_bar_chart_view.setVisible(False)
         self.assets_investments_pies_panel.setVisible(False)
         self.range_controls_row.setVisible(
-            not is_projection_report and not is_college_tuition_report and not is_assets_investments_report
+            not is_projection_report
+            and not is_college_tuition_report
+            and not is_assets_investments_report
+            and not is_rsu_vesting_report
         )
         self.range_label.setVisible(
-            not is_projection_report and not is_college_tuition_report and not is_assets_investments_report
+            not is_projection_report
+            and not is_college_tuition_report
+            and not is_assets_investments_report
+            and not is_rsu_vesting_report
         )
         if report_id == NET_WORTH_REPORT_ID:
             self._load_net_worth_report()
@@ -392,6 +454,8 @@ class ReportsPane(QWidget):
             self._load_assets_and_investments_report()
         elif is_recurring_report:
             self._load_recurring_report()
+        elif is_rsu_vesting_report:
+            self._load_rsu_vesting_forecast_report()
 
     def _on_view_mode_changed(self):
         if self._active_report_id in self._category_reports:
@@ -409,6 +473,12 @@ class ReportsPane(QWidget):
                 self._render_assets_investments_bar_chart()
             elif mode == "Pie Charts":
                 self._render_assets_investments_pie_charts()
+        elif self._active_report_id == RSU_VESTING_FORECAST_REPORT_ID:
+            is_chart = self.view_selector.currentText() == "Chart"
+            self.rsu_vesting_forecast_table_view.setVisible(not is_chart)
+            self.rsu_vesting_charts_panel.setVisible(is_chart)
+            if is_chart:
+                self._render_rsu_vesting_charts()
 
     def _load_net_worth_report(self):
         # Show the spinner before doing any work: fetching every account's
@@ -612,6 +682,48 @@ class ReportsPane(QWidget):
         self.end_date_edit.blockSignals(False)
 
         self._render_investment_table(earliest, latest)
+
+    def _load_rsu_vesting_forecast_report(self):
+        try:
+            self._rsu_vests = data.list_upcoming_vests(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load RSU vesting forecast report: {exc}")
+            return
+        settings = load_rsu_tax_settings()
+        self.rsu_vesting_tax_rate_spinbox.blockSignals(True)
+        self.rsu_vesting_tax_rate_spinbox.setValue(settings.get("tax_rate", RSU_DEFAULT_TAX_RATE))
+        self.rsu_vesting_tax_rate_spinbox.blockSignals(False)
+        self._render_rsu_vesting_table()
+
+    def _on_rsu_vesting_tax_rate_changed(self):
+        save_rsu_tax_settings({"tax_rate": self.rsu_vesting_tax_rate_spinbox.value()})
+        self._render_rsu_vesting_table()
+        if self.rsu_vesting_charts_panel.isVisible():
+            self._render_rsu_vesting_charts()
+
+    def _rsu_vesting_tax_rate(self):
+        return Decimal(str(self.rsu_vesting_tax_rate_spinbox.value())) / Decimal("100")
+
+    def _render_rsu_vesting_table(self):
+        rows = compute_rsu_vesting_forecast(self._rsu_vests, self._to_usd, self._rsu_vesting_tax_rate())
+        self.rsu_vesting_forecast_table_model.set_rows(rows)
+
+    def _render_rsu_vesting_charts(self):
+        shares_series, shares_taxed_series, value_series, tax_series = compute_rsu_vesting_cumulative_series(
+            self._rsu_vests, self._to_usd, self._rsu_vesting_tax_rate()
+        )
+        self.rsu_vesting_shares_chart_view.setChart(
+            build_line_chart(
+                "Cumulative Shares Vesting",
+                [("Shares Vesting", shares_series), ("Shares Taxed", shares_taxed_series)],
+            )
+        )
+        self.rsu_vesting_value_chart_view.setChart(
+            build_line_chart(
+                "Cumulative Vesting Value (USD)",
+                [("Value Vesting", value_series), ("Tax Owed", tax_series)],
+            )
+        )
 
     def _render_investment_table(self, start, end):
         investments = compute_investment_analysis(self._investment_prices, start, end)

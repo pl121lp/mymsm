@@ -12,6 +12,7 @@ from models import (
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
     RecurringSubscriptionsTableModel,
+    RsuVestingForecastTableModel,
     SearchResultTableModel,
     SpendingByCategoryTableModel,
     TransactionTableModel,
@@ -24,6 +25,8 @@ from models import (
     compute_loan_totals,
     compute_net_worth_series,
     compute_recurring_transactions,
+    compute_rsu_vesting_cumulative_series,
+    compute_rsu_vesting_forecast,
     compute_spending_by_category,
     generate_sample_dates,
 )
@@ -1418,3 +1421,195 @@ def test_income_by_category_model_columns_are_category_and_income():
     assert model.columnCount() == 2
     assert _data(model, 0, 0) == "Salary"
     assert _data(model, 0, 1) == "1,200.00"
+
+
+def test_compute_rsu_vesting_forecast_converts_quantity_and_price_to_usd_value():
+    vests = [("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 9, 1), Decimal("10"), Decimal("150.00"), "USD")]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0"))
+    assert result == [
+        (
+            date(2026, 9, 1), "Etrade QCom RSUs", "Qualcomm Inc", Decimal("10"), Decimal("0"),
+            Decimal("1500.00"), Decimal("0.00"), Decimal("1500.00"), False,
+        ),
+        ("", "", "Total 2026", "", Decimal("0"), Decimal("1500.00"), Decimal("0.00"), Decimal("1500.00"), True),
+        ("", "", "Total", "", Decimal("0"), Decimal("1500.00"), Decimal("0.00"), Decimal("1500.00"), True),
+    ]
+
+
+def test_compute_rsu_vesting_forecast_converts_currency_to_usd():
+    vests = [("Foreign Brokerage", "Fund X", date(2026, 1, 1), Decimal("100"), Decimal("10.00"), "SEK")]
+    result = compute_rsu_vesting_forecast(
+        vests,
+        to_usd=lambda cur, amt: amt * Decimal("0.1") if cur == "SEK" else amt,
+        tax_rate=Decimal("0"),
+    )
+    assert result[0][5] == Decimal("100.0")
+
+
+def test_compute_rsu_vesting_forecast_treats_missing_price_as_unknown_value():
+    vests = [("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 1, 1), Decimal("5"), None, "USD")]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35"))
+    assert result == [
+        (
+            date(2026, 1, 1), "Etrade QCom RSUs", "Qualcomm Inc", Decimal("5"), Decimal("1.75"),
+            None, None, None, False,
+        ),
+        ("", "", "Total 2026", "", Decimal("1.75"), Decimal("0"), Decimal("0"), Decimal("0"), True),
+        ("", "", "Total", "", Decimal("1.75"), Decimal("0"), Decimal("0"), Decimal("0"), True),
+    ]
+
+
+def test_compute_rsu_vesting_forecast_computes_tax_and_net_of_tax_value():
+    vests = [("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 9, 1), Decimal("10"), Decimal("150.00"), "USD")]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35"))
+    row = result[0]
+    assert row[5] == Decimal("1500.00")  # est. value
+    assert row[6] == Decimal("525.0000")  # est. tax: 1500 * 0.35
+    assert row[7] == Decimal("975.0000")  # net of tax: 1500 - 525
+
+
+def test_compute_rsu_vesting_forecast_shares_taxed_does_not_require_a_known_price():
+    # shares_taxed = quantity * tax_rate, independent of price, so it's
+    # still shown even when the security has no priced trade yet.
+    vests = [("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 1, 1), Decimal("20"), None, "USD")]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35"))
+    assert result[0][4] == Decimal("7.00")
+
+
+def test_compute_rsu_vesting_forecast_inserts_subtotal_after_each_calendar_year():
+    vests = [
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 3, 1), Decimal("10"), Decimal("100.00"), "USD"),
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 9, 1), Decimal("10"), Decimal("120.00"), "USD"),
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2027, 3, 1), Decimal("10"), Decimal("130.00"), "USD"),
+    ]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0"))
+    labels_and_values = [(row[2], row[5]) for row in result if row[8]]
+    assert labels_and_values == [
+        ("Total 2026", Decimal("2200.00")),
+        ("Total 2027", Decimal("1300.00")),
+        ("Total", Decimal("3500.00")),
+    ]
+
+
+def test_compute_rsu_vesting_forecast_sorts_by_vest_date_ascending():
+    vests = [
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2027, 1, 1), Decimal("1"), Decimal("100.00"), "USD"),
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 1, 1), Decimal("1"), Decimal("100.00"), "USD"),
+    ]
+    result = compute_rsu_vesting_forecast(vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0"))
+    vest_dates = [row[0] for row in result if not row[8]]
+    assert vest_dates == [date(2026, 1, 1), date(2027, 1, 1)]
+
+
+def test_compute_rsu_vesting_forecast_empty_list_returns_empty_list():
+    assert compute_rsu_vesting_forecast([], to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35")) == []
+
+
+def test_rsu_vesting_forecast_model_columns_include_shares_taxed_and_tax_columns():
+    model = RsuVestingForecastTableModel(
+        [
+            (
+                date(2026, 9, 1), "Etrade QCom RSUs", "Qualcomm Inc", Decimal("10"), Decimal("3.5"),
+                Decimal("1500.00"), Decimal("525.00"), Decimal("975.00"), False,
+            )
+        ]
+    )
+    assert model.rowCount() == 1
+    assert model.columnCount() == 8
+    assert _data(model, 0, 0) == "2026-09-01"
+    assert _data(model, 0, 1) == "Etrade QCom RSUs"
+    assert _data(model, 0, 2) == "Qualcomm Inc"
+    assert _data(model, 0, 3) == "10.0000"
+    assert _data(model, 0, 4) == "3.5000"
+    assert _data(model, 0, 5) == "1,500.00"
+    assert _data(model, 0, 6) == "525.00"
+    assert _data(model, 0, 7) == "975.00"
+
+
+def test_rsu_vesting_forecast_model_blank_value_shown_as_empty_string():
+    model = RsuVestingForecastTableModel(
+        [
+            (
+                date(2026, 9, 1), "Etrade QCom RSUs", "Qualcomm Inc", Decimal("10"), Decimal("3.5"),
+                None, None, None, False,
+            )
+        ]
+    )
+    assert _data(model, 0, 5) == ""
+    assert _data(model, 0, 6) == ""
+    assert _data(model, 0, 7) == ""
+
+
+def test_rsu_vesting_forecast_model_set_rows_replaces_contents():
+    model = RsuVestingForecastTableModel()
+    assert model.rowCount() == 0
+    model.set_rows(
+        [
+            (
+                date(2026, 9, 1), "Etrade QCom RSUs", "Qualcomm Inc", Decimal("10"), Decimal("3.5"),
+                Decimal("1500.00"), Decimal("525.00"), Decimal("975.00"), False,
+            )
+        ]
+    )
+    assert model.rowCount() == 1
+    assert _data(model, 0, 1) == "Etrade QCom RSUs"
+
+
+def test_rsu_vesting_forecast_model_bolds_total_rows():
+    model = RsuVestingForecastTableModel(
+        [("", "", "Total 2026", "", Decimal("3.5"), Decimal("1500.00"), Decimal("525.00"), Decimal("975.00"), True)]
+    )
+    index = model.index(0, 2)
+    assert model.data(index, Qt.FontRole).bold()
+
+
+def test_compute_rsu_vesting_cumulative_series_accumulates_shares_and_value():
+    vests = [
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 3, 1), Decimal("10"), Decimal("100.00"), "USD"),
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 9, 1), Decimal("5"), Decimal("120.00"), "USD"),
+    ]
+    shares_series, shares_taxed_series, value_series, tax_series = compute_rsu_vesting_cumulative_series(
+        vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0")
+    )
+    assert shares_series == [
+        (date(2026, 3, 1), Decimal("10")),
+        (date(2026, 9, 1), Decimal("15")),
+    ]
+    assert value_series == [
+        (date(2026, 3, 1), Decimal("1000.00")),
+        (date(2026, 9, 1), Decimal("1600.00")),
+    ]
+
+
+def test_compute_rsu_vesting_cumulative_series_accumulates_shares_taxed_and_tax():
+    vests = [
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 3, 1), Decimal("10"), Decimal("100.00"), "USD"),
+        ("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 9, 1), Decimal("5"), Decimal("120.00"), "USD"),
+    ]
+    _shares, shares_taxed_series, _value, tax_series = compute_rsu_vesting_cumulative_series(
+        vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35")
+    )
+    assert shares_taxed_series == [
+        (date(2026, 3, 1), Decimal("3.50")),  # 10 * 0.35
+        (date(2026, 9, 1), Decimal("5.25")),  # + 5 * 0.35
+    ]
+    assert tax_series == [
+        (date(2026, 3, 1), Decimal("350.0000")),  # 1000.00 * 0.35
+        (date(2026, 9, 1), Decimal("560.0000")),  # + 600.00 * 0.35
+    ]
+
+
+def test_compute_rsu_vesting_cumulative_series_shares_still_accumulate_without_a_known_price():
+    vests = [("Etrade QCom RSUs", "Qualcomm Inc", date(2026, 3, 1), Decimal("10"), None, "USD")]
+    shares_series, shares_taxed_series, value_series, tax_series = compute_rsu_vesting_cumulative_series(
+        vests, to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35")
+    )
+    assert shares_series == [(date(2026, 3, 1), Decimal("10"))]
+    assert shares_taxed_series == [(date(2026, 3, 1), Decimal("3.50"))]
+    assert value_series == [(date(2026, 3, 1), Decimal("0"))]
+    assert tax_series == [(date(2026, 3, 1), Decimal("0"))]
+
+
+def test_compute_rsu_vesting_cumulative_series_empty_list_returns_empty_series():
+    result = compute_rsu_vesting_cumulative_series([], to_usd=lambda cur, amt: amt, tax_rate=Decimal("0.35"))
+    assert result == ([], [], [], [])

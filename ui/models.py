@@ -725,6 +725,160 @@ class AssetsAndInvestmentsTableModel(QAbstractTableModel):
         return None
 
 
+def _rsu_subtotal_row(label, shares_taxed_total, value_total, tax_rate):
+    tax = value_total * tax_rate
+    net_value = value_total - tax
+    return ("", "", label, "", shares_taxed_total, value_total, tax, net_value, True)
+
+
+def compute_rsu_vesting_forecast(vests, to_usd, tax_rate):
+    """Report rows (USD) for the RSU vesting forecast report: one row per
+    upcoming vest event sorted by date, followed by a bold subtotal row
+    after each calendar year's vests and a final bold grand-total row.
+
+    vests is data.list_upcoming_vests()-style rows: (account_name,
+    security_name, vest_date, quantity, price, currency). tax_rate is a
+    Decimal fraction (e.g. Decimal("0.35") for 35%) applied to each vest's
+    estimated value to get an estimated tax owed and the resulting
+    net-of-tax value, and to its share count to get shares_taxed -- the
+    number of vesting shares expected to be withheld/sold to cover that
+    tax. shares_taxed doesn't depend on price, so it's shown even when the
+    security has no priced trade yet; price is None in that case, so the
+    dollar value/tax/net_value are also None and excluded from the
+    subtotals (rather than treated as zero).
+
+    Returns a list of (vest_date, account_name, security_name, quantity,
+    shares_taxed, value, tax, net_value, emphasized) rows suitable for
+    RsuVestingForecastTableModel.set_rows(). Subtotal/total rows leave
+    vest_date/account_name/quantity blank and carry their label in
+    security_name instead.
+    """
+    if not vests:
+        return []
+
+    ordered = sorted(vests, key=lambda row: (row[2], row[0], row[1]))
+
+    rows = []
+    year_value_total = Decimal("0")
+    year_shares_taxed_total = Decimal("0")
+    grand_value_total = Decimal("0")
+    grand_shares_taxed_total = Decimal("0")
+    current_year = ordered[0][2].year
+    for account_name, security_name, vest_date, quantity, price, currency in ordered:
+        if vest_date.year != current_year:
+            rows.append(
+                _rsu_subtotal_row(f"Total {current_year}", year_shares_taxed_total, year_value_total, tax_rate)
+            )
+            year_value_total = Decimal("0")
+            year_shares_taxed_total = Decimal("0")
+            current_year = vest_date.year
+        shares_taxed = quantity * tax_rate
+        year_shares_taxed_total += shares_taxed
+        grand_shares_taxed_total += shares_taxed
+        if price is not None:
+            value = to_usd(currency, quantity * price)
+            tax = value * tax_rate
+            net_value = value - tax
+            year_value_total += value
+            grand_value_total += value
+        else:
+            value = tax = net_value = None
+        rows.append((vest_date, account_name, security_name, quantity, shares_taxed, value, tax, net_value, False))
+    rows.append(_rsu_subtotal_row(f"Total {current_year}", year_shares_taxed_total, year_value_total, tax_rate))
+    rows.append(_rsu_subtotal_row("Total", grand_shares_taxed_total, grand_value_total, tax_rate))
+    return rows
+
+
+def compute_rsu_vesting_cumulative_series(vests, to_usd, tax_rate):
+    """Cumulative shares, shares taxed, estimated USD value, and tax owed
+    as of each upcoming vest date, for the RSU vesting forecast chart.
+
+    vests is data.list_upcoming_vests()-style rows, and tax_rate a Decimal
+    fraction, as in compute_rsu_vesting_forecast(). Returns (shares_series,
+    shares_taxed_series, value_series, tax_series), each a list of
+    (vest_date, cumulative) pairs in chronological order. A vest with no
+    known price still adds to the shares and shares_taxed running totals
+    (shares_taxed = quantity * tax_rate doesn't depend on price) but not
+    the value or tax ones (their price is unknown, not zero).
+    """
+    ordered = sorted(vests, key=lambda row: (row[2], row[0], row[1]))
+
+    shares_series = []
+    shares_taxed_series = []
+    value_series = []
+    tax_series = []
+    cumulative_shares = Decimal("0")
+    cumulative_shares_taxed = Decimal("0")
+    cumulative_value = Decimal("0")
+    cumulative_tax = Decimal("0")
+    for account_name, security_name, vest_date, quantity, price, currency in ordered:
+        cumulative_shares += quantity
+        cumulative_shares_taxed += quantity * tax_rate
+        if price is not None:
+            value = to_usd(currency, quantity * price)
+            cumulative_value += value
+            cumulative_tax += value * tax_rate
+        shares_series.append((vest_date, cumulative_shares))
+        shares_taxed_series.append((vest_date, cumulative_shares_taxed))
+        value_series.append((vest_date, cumulative_value))
+        tax_series.append((vest_date, cumulative_tax))
+    return shares_series, shares_taxed_series, value_series, tax_series
+
+
+class RsuVestingForecastTableModel(QAbstractTableModel):
+    COLUMNS = [
+        "Vest Date", "Account", "Security", "Shares", "Shares Taxed",
+        "Est. Value (USD)", "Est. Tax (USD)", "Net of Tax (USD)",
+    ]
+
+    def __init__(self, rows=None, parent=None):
+        super().__init__(parent)
+        self._rows = rows or []
+
+    def set_rows(self, rows):
+        self.beginResetModel()
+        self._rows = rows
+        self.endResetModel()
+
+    def rowCount(self, parent=None):
+        return len(self._rows)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        (
+            vest_date, account_name, security_name, quantity, shares_taxed, value, tax, net_value, emphasized,
+        ) = self._rows[index.row()]
+        if role == Qt.DisplayRole:
+            column = index.column()
+            if column == 0:
+                return vest_date.isoformat() if vest_date else ""
+            if column == 1:
+                return account_name
+            if column == 2:
+                return security_name
+            if column == 3:
+                return format_quantity(quantity) if quantity != "" else ""
+            if column == 4:
+                return format_quantity(shares_taxed) if shares_taxed != "" else ""
+            if column == 5:
+                return format_currency(value) if value is not None else ""
+            if column == 6:
+                return format_currency(tax) if tax is not None else ""
+            return format_currency(net_value) if net_value is not None else ""
+        if role == Qt.FontRole and emphasized:
+            font = QFont()
+            font.setBold(True)
+            return font
+        return None
+
+
 class AccountTableModel(QAbstractTableModel):
     COLUMNS = ["Name", "Type", "Currency", "Balance"]
 

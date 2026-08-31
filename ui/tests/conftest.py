@@ -15,6 +15,7 @@ import app_settings
 import college_tuition_settings
 import payee_aliases
 import projection_settings
+import rsu_tax_settings
 from schema import apply_schema
 
 
@@ -34,6 +35,7 @@ def _isolate_config_files(tmp_path, monkeypatch):
         config_dir / "college_tuition_settings.json",
     )
     monkeypatch.setattr(payee_aliases, "DEFAULT_ALIASES_PATH", config_dir / "payee_aliases.json")
+    monkeypatch.setattr(rsu_tax_settings, "DEFAULT_SETTINGS_PATH", config_dir / "rsu_tax_settings.json")
 
 
 @pytest.fixture(scope="session")
