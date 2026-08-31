@@ -754,7 +754,7 @@ def test_value_checkbox_unchecked_shows_transaction_table(qapp, conn):
     assert window.content_stack.currentWidget() is window.transaction_view
 
 
-def test_selecting_new_account_resets_value_checkbox_and_content_page(qapp, conn):
+def test_selecting_new_account_keeps_value_checkbox_and_value_page(qapp, conn):
     window = MainWindow(conn)
     window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
     window.value_checkbox.setChecked(True)
@@ -764,6 +764,17 @@ def test_selecting_new_account_resets_value_checkbox_and_content_page(qapp, conn
         if window.account_model.account_at(row)[1] == "Brokerage"
     )
     window.account_view.selectRow(brokerage_row)
+
+    assert window.value_checkbox.isChecked()
+    assert window.content_stack.currentWidget() is window.value_chart_view
+
+
+def test_deselecting_account_resets_value_checkbox_and_content_page(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    window.value_checkbox.setChecked(True)
+
+    window.account_view.clearSelection()
 
     assert not window.value_checkbox.isChecked()
     assert window.content_stack.currentWidget() is window.transaction_view

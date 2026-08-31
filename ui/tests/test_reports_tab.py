@@ -29,7 +29,11 @@ def _wait_for_net_worth_report(pane):
     """Net-worth report computation runs on a background thread (see
     busy_indicator.run_in_background), and loading chains a second one
     (account histories, then the chart series) -- keep waiting and letting
-    Qt deliver queued completion signals until no new worker gets chained."""
+    Qt deliver queued completion signals until no new worker gets chained.
+    Loading itself is deferred via QTimer.singleShot(0, ...) so the spinner
+    paints before the synchronous account fetch runs; process events first
+    so that timer fires."""
+    QApplication.processEvents()
     for _ in range(5):
         worker = pane._net_worth_worker
         if worker is None:
@@ -68,6 +72,10 @@ def _select_recurring_report(pane):
     pane.list_view.selectionModel().select(
         pane.list_model.index(7, 0), QItemSelectionModel.ClearAndSelect
     )
+    # Loading is deferred via QTimer.singleShot(0, ...) so the spinner paints
+    # before the synchronous transaction fetch runs; process events so that
+    # timer fires before callers inspect the result.
+    QApplication.processEvents()
 
 
 def _wait_for_recurring_report(pane):
@@ -820,7 +828,10 @@ def test_recurring_report_busy_indicator_starts_and_stops_during_computation(qap
     _select_recurring_report(pane)
     _wait_for_recurring_report(pane)
 
-    assert calls == ["start", "stop"]
+    # start() fires twice: once immediately on selection (so the spinner is
+    # visible before the synchronous transaction fetch), then again when the
+    # background computation kicks off via run_in_background.
+    assert calls == ["start", "start", "stop"]
     assert not pane.recurring_status_row.isVisible()
 
 

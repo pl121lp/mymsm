@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from functools import partial
 
-from PySide6.QtCore import QDate, Qt
+from PySide6.QtCore import QDate, Qt, QTimer
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -411,9 +411,20 @@ class ReportsPane(QWidget):
                 self._render_assets_investments_pie_charts()
 
     def _load_net_worth_report(self):
+        # Show the spinner before doing any work: fetching every account's
+        # transactions below is synchronous and can be slow, so it must not
+        # run until Qt has had a chance to paint the busy indicator -- hence
+        # deferring the actual loading to the next event-loop tick.
+        self.net_worth_status_row.setVisible(True)
+        self.net_worth_busy_indicator.start()
+        QTimer.singleShot(0, self._load_net_worth_report_accounts)
+
+    def _load_net_worth_report_accounts(self):
         try:
             accounts = data.list_accounts(self._conn, include_closed=True)
         except Exception as exc:
+            self.net_worth_busy_indicator.stop()
+            self.net_worth_status_row.setVisible(False)
             self._report_error(f"Failed to load net worth report: {exc}")
             return
 
@@ -425,6 +436,8 @@ class ReportsPane(QWidget):
             try:
                 transactions = data.list_transactions(self._conn, account_id)
             except Exception as exc:
+                self.net_worth_busy_indicator.stop()
+                self.net_worth_status_row.setVisible(False)
                 self._report_error(f"Failed to load net worth report: {exc}")
                 return
             account_inputs.append((currency, opening_balance, is_investment, transactions, date_opened, is_closed))
@@ -608,13 +621,24 @@ class ReportsPane(QWidget):
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
 
     def _load_recurring_report(self):
+        # Show the spinner before the (synchronous, potentially slow) fetch
+        # below runs, deferred to the next event-loop tick so Qt paints it first.
+        self.recurring_status_row.setVisible(True)
+        self.recurring_busy_indicator.start()
+        QTimer.singleShot(0, self._load_recurring_report_transactions)
+
+    def _load_recurring_report_transactions(self):
         try:
             transactions = data.list_recurring_candidate_transactions(self._conn)
         except Exception as exc:
+            self.recurring_busy_indicator.stop()
+            self.recurring_status_row.setVisible(False)
             self._report_error(f"Failed to load recurring/subscriptions report: {exc}")
             return
 
         if not transactions:
+            self.recurring_busy_indicator.stop()
+            self.recurring_status_row.setVisible(False)
             self._recurring_transactions = []
             self.recurring_table_model.set_recurring([])
             self.range_label.setText("")
