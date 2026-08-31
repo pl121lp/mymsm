@@ -3,7 +3,7 @@ from datetime import date
 
 import pytest
 from PySide6.QtCore import QDate, QItemSelectionModel, Qt
-from PySide6.QtWidgets import QDialog, QScrollArea, QSizePolicy
+from PySide6.QtWidgets import QApplication, QDialog, QScrollArea, QSizePolicy
 
 import reports_tab
 import theme
@@ -22,6 +22,22 @@ def _select_net_worth_report(pane):
     pane.list_view.selectionModel().select(
         pane.list_model.index(0, 0), QItemSelectionModel.ClearAndSelect
     )
+    _wait_for_net_worth_report(pane)
+
+
+def _wait_for_net_worth_report(pane):
+    """Net-worth report computation runs on a background thread (see
+    busy_indicator.run_in_background), and loading chains a second one
+    (account histories, then the chart series) -- keep waiting and letting
+    Qt deliver queued completion signals until no new worker gets chained."""
+    for _ in range(5):
+        worker = pane._net_worth_worker
+        if worker is None:
+            break
+        worker.wait()
+        QApplication.processEvents()
+        if pane._net_worth_worker is worker:
+            break
 
 
 def _select_spending_report(pane):
@@ -45,6 +61,30 @@ def _select_investment_report(pane):
 def _select_college_tuition_report(pane):
     pane.list_view.selectionModel().select(
         pane.list_model.index(5, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _select_recurring_report(pane):
+    pane.list_view.selectionModel().select(
+        pane.list_model.index(7, 0), QItemSelectionModel.ClearAndSelect
+    )
+
+
+def _wait_for_recurring_report(pane):
+    """Recurring-report computation runs on a background thread (see
+    busy_indicator.run_in_background); block until it finishes and let Qt
+    deliver its queued completion signal before asserting on the result."""
+    worker = pane._recurring_worker
+    if worker is not None:
+        worker.wait()
+    QApplication.processEvents()
+
+
+def _add_recurring_transactions(conn):
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(5000, 1, 20, 100, '2024-01-15', -52.30, 'monthly charge', NULL, NULL, NULL, NULL, NULL), "
+        "(5001, 1, 20, 100, '2024-02-15', -52.30, 'monthly charge', NULL, NULL, NULL, NULL, NULL)"
     )
 
 
@@ -87,6 +127,11 @@ def test_reports_list_shows_income_by_category_report(qapp, dict_conn):
 def test_reports_list_shows_investment_analysis_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.data(pane.list_model.index(3, 0)) == "Investment analysis"
+
+
+def test_reports_list_shows_recurring_subscriptions_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.list_model.data(pane.list_model.index(7, 0)) == "Recurring / Subscriptions"
 
 
 def test_empty_chart_panel_uses_dark_theme_when_dark_mode_is_active(qapp, dict_conn):
@@ -133,6 +178,7 @@ def test_updating_range_redraws_chart_for_narrower_window(qapp, dict_conn):
     pane.start_date_edit.setDate(QDate(2024, 2, 1))
     pane.end_date_edit.setDate(QDate(2024, 3, 1))
     pane.update_range_button.click()
+    _wait_for_net_worth_report(pane)
 
     assert pane.range_label.text() == "Showing 2024-02-01 to 2024-03-01"
     bar_set = pane.chart_view.chart().series()[0].barSets()[0]
@@ -671,6 +717,138 @@ def test_investment_report_hides_view_selector_and_custom_categories_button(qapp
     assert not pane.view_selector_row.isVisible()
 
 
+def test_selecting_recurring_report_lists_detected_subscriptions(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "_today", lambda: date(2024, 6, 1))
+    _add_recurring_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+
+    _select_recurring_report(pane)
+    _wait_for_recurring_report(pane)
+
+    assert pane.recurring_table_view.isVisible()
+    assert not pane.chart_view.isVisible()
+    assert not pane.category_table_view.isVisible()
+    assert pane.recurring_table_model.rowCount() == 1
+    assert _table_cell(pane.recurring_table_view, 0, 0) == "Store A"
+    assert _table_cell(pane.recurring_table_view, 0, 1) == "Checking"
+    assert _table_cell(pane.recurring_table_view, 0, 2) == "Monthly"
+    assert _table_cell(pane.recurring_table_view, 0, 3) == "3"
+
+
+def test_recurring_table_view_has_sorting_enabled(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    assert pane.recurring_table_view.isSortingEnabled()
+
+
+def test_recurring_report_merges_payees_sharing_a_name_prefix(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "_today", lambda: date(2024, 6, 1))
+    dict_conn.execute(
+        "INSERT INTO payees VALUES (200, 'VERIZON WIRELESS PAYMENTS 8291'), "
+        "(201, 'VERIZON WIRELESS PAYMENTS 7734'), (202, 'VERIZON WIRELESS PAYMENTS 4402')"
+    )
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(6000, 1, 20, 200, '2024-01-10', -95.00, NULL, NULL, NULL, NULL, NULL, NULL), "
+        "(6001, 1, 20, 201, '2024-02-10', -95.00, NULL, NULL, NULL, NULL, NULL, NULL), "
+        "(6002, 1, 20, 202, '2024-03-10', -95.00, NULL, NULL, NULL, NULL, NULL, NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+
+    _select_recurring_report(pane)
+    _wait_for_recurring_report(pane)
+
+    rows = [
+        (_table_cell(pane.recurring_table_view, row, 0), _table_cell(pane.recurring_table_view, row, 3))
+        for row in range(pane.recurring_table_model.rowCount())
+    ]
+    merged_rows = [
+        row
+        for row in rows
+        if row[0]
+        in (
+            "VERIZON WIRELESS PAYMENTS 8291",
+            "VERIZON WIRELESS PAYMENTS 7734",
+            "VERIZON WIRELESS PAYMENTS 4402",
+        )
+    ]
+    assert merged_rows == [(merged_rows[0][0], "3")]
+
+
+def test_recurring_report_hides_view_selector_and_custom_categories_button(qapp, dict_conn):
+    _add_recurring_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_recurring_report(pane)
+    assert not pane.view_selector_row.isVisible()
+
+
+def test_selecting_recurring_report_defaults_date_range_to_full_history(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "_today", lambda: date(2024, 6, 1))
+    _add_recurring_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_recurring_report(pane)
+    _wait_for_recurring_report(pane)
+    assert pane.start_date_edit.date().toPython() == date(2024, 1, 15)
+    assert pane.end_date_edit.date().toPython() == date(2024, 3, 15)
+    assert pane.range_label.text() == "Showing 2024-01-15 to 2024-03-15"
+
+
+def test_selecting_recurring_report_defaults_to_three_years_back_when_history_is_older(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "_today", lambda: date(2026, 8, 30))
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(7000, 1, 20, 100, '2020-01-15', -52.30, 'old charge', NULL, NULL, NULL, NULL, NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_recurring_report(pane)
+    assert pane.start_date_edit.date().toPython() == date(2023, 8, 30)
+
+
+def test_recurring_report_busy_indicator_starts_and_stops_during_computation(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "_today", lambda: date(2024, 6, 1))
+    _add_recurring_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    calls = []
+    monkeypatch.setattr(pane.recurring_busy_indicator, "start", lambda: calls.append("start"))
+    monkeypatch.setattr(pane.recurring_busy_indicator, "stop", lambda: calls.append("stop"))
+
+    _select_recurring_report(pane)
+    _wait_for_recurring_report(pane)
+
+    assert calls == ["start", "stop"]
+    assert not pane.recurring_status_row.isVisible()
+
+
+def test_narrowing_recurring_report_range_drops_subscriptions_below_minimum_occurrences(qapp, dict_conn):
+    _add_recurring_transactions(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_recurring_report(pane)
+    _wait_for_recurring_report(pane)
+
+    pane.start_date_edit.setDate(QDate(2024, 2, 1))
+    pane.end_date_edit.setDate(QDate(2024, 3, 31))
+    pane.update_range_button.click()
+    _wait_for_recurring_report(pane)
+
+    assert pane.recurring_table_model.rowCount() == 0
+
+
+def test_recurring_report_shows_error_when_no_payee_transactions_exist(qapp, dict_conn):
+    errors = []
+    pane = ReportsPane(dict_conn, report_error=errors.append, to_usd=lambda cur, amt: amt)
+    dict_conn.execute("DELETE FROM transactions")
+
+    _select_recurring_report(pane)
+
+    assert errors
+    assert pane.recurring_table_model.rowCount() == 0
+
+
 def test_selecting_investment_report_defaults_date_range_to_full_history(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_investment_report(pane)
@@ -1193,13 +1371,75 @@ def test_selecting_assets_and_investments_report_shows_table_hides_others(qapp, 
 
     _select_assets_and_investments_report(pane)
     assert pane.assets_investments_table_view.isVisible()
+    assert not pane.assets_investments_bar_chart_view.isVisible()
+    assert not pane.assets_investments_pies_panel.isVisible()
     assert not pane.chart_view.isVisible()
     assert not pane.category_table_view.isVisible()
     assert not pane.investment_table_view.isVisible()
-    assert not pane.view_selector_row.isVisible()
     assert not pane.investment_controls_row.isVisible()
     assert not pane.range_controls_row.isVisible()
     assert not pane.range_label.isVisible()
+
+
+def test_assets_and_investments_view_selector_shows_table_bar_and_pie_options(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_assets_and_investments_report(pane)
+
+    assert pane.view_selector_row.isVisible()
+    assert not pane.custom_categories_button.isVisible()
+    assert pane.view_selector.currentText() == "Table"
+    options = [pane.view_selector.itemText(i) for i in range(pane.view_selector.count())]
+    assert options == ["Table", "Bar Chart", "Pie Charts"]
+
+
+def test_switching_assets_and_investments_to_bar_chart_stacks_accounts_per_section(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_assets_and_investments_report(pane)
+
+    pane.view_selector.setCurrentText("Bar Chart")
+
+    assert pane.assets_investments_bar_chart_view.isVisible()
+    assert not pane.assets_investments_table_view.isVisible()
+    series = pane.assets_investments_bar_chart_view.chart().series()[0]
+    labels = sorted(bar_set.label() for bar_set in series.barSets())
+    assert labels == ["Brokerage A", "Brokerage B", "Car Loan", "House"]
+
+
+def test_switching_assets_and_investments_to_pie_charts_shows_one_pie_per_section(qapp, dict_conn):
+    _add_asset_and_loan_accounts(dict_conn)
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_assets_and_investments_report(pane)
+
+    pane.view_selector.setCurrentText("Pie Charts")
+
+    assert pane.assets_investments_pies_panel.isVisible()
+    assert not pane.assets_investments_table_view.isVisible()
+    investments_pie = pane.assets_investments_pie_charts["Investments"].chart().series()[0]
+    assert sorted(pie_slice.label() for pie_slice in investments_pie.slices()) == [
+        "Brokerage A",
+        "Brokerage B",
+    ]
+    assets_pie = pane.assets_investments_pie_charts["Assets"].chart().series()[0]
+    assert [pie_slice.label() for pie_slice in assets_pie.slices()] == ["House"]
+    loans_pie = pane.assets_investments_pie_charts["Loans / Liabilities"].chart().series()[0]
+    assert [pie_slice.label() for pie_slice in loans_pie.slices()] == ["Car Loan"]
+
+
+def test_switching_assets_and_investments_back_to_table_hides_charts(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_assets_and_investments_report(pane)
+    pane.view_selector.setCurrentText("Bar Chart")
+
+    pane.view_selector.setCurrentText("Table")
+
+    assert pane.assets_investments_table_view.isVisible()
+    assert not pane.assets_investments_bar_chart_view.isVisible()
+    assert not pane.assets_investments_pies_panel.isVisible()
 
 
 def test_assets_and_investments_report_lists_accounts_by_section_with_totals(qapp, dict_conn):

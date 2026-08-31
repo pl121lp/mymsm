@@ -4,7 +4,13 @@ from decimal import Decimal
 from PySide6.QtCore import Qt
 
 import charts
-from charts import build_bar_chart, build_line_chart, build_pie_chart, build_stacked_area_chart
+from charts import (
+    build_bar_chart,
+    build_grouped_stacked_bar_chart,
+    build_line_chart,
+    build_pie_chart,
+    build_stacked_area_chart,
+)
 
 
 def test_build_pie_chart_creates_one_slice_per_category(qapp):
@@ -36,6 +42,65 @@ def test_build_bar_chart_hover_shows_date_and_value(qapp, monkeypatch):
 
     series.hovered.emit(True, 1, bar_set)
     assert shown == ["2024-07-01: 1,234.50", "2024-09-01: 6,789.25"]
+
+
+def _asset_groups():
+    return [
+        ("Investments", [("Brokerage A", Decimal("100")), ("Brokerage B", Decimal("50"))]),
+        ("Assets", [("House", Decimal("500000"))]),
+        ("Loans / Liabilities", []),
+    ]
+
+
+def test_build_grouped_stacked_bar_chart_creates_one_barset_per_account(qapp):
+    chart = build_grouped_stacked_bar_chart("Assets and Investments (USD)", _asset_groups())
+
+    series = chart.series()[0]
+    bar_sets = series.barSets()
+    assert [bar_set.label() for bar_set in bar_sets] == ["Brokerage A", "Brokerage B", "House"]
+
+
+def test_build_grouped_stacked_bar_chart_pads_accounts_with_zero_outside_their_group(qapp):
+    chart = build_grouped_stacked_bar_chart("Assets and Investments (USD)", _asset_groups())
+
+    series = chart.series()[0]
+    bar_sets = {bar_set.label(): bar_set for bar_set in series.barSets()}
+
+    def _values(bar_set):
+        return [bar_set.at(i) for i in range(bar_set.count())]
+
+    assert _values(bar_sets["Brokerage A"]) == [100.0, 0.0, 0.0]
+    assert _values(bar_sets["House"]) == [0.0, 500000.0, 0.0]
+
+
+def test_build_grouped_stacked_bar_chart_orders_accounts_by_descending_value_within_each_group(qapp):
+    groups = [
+        ("Investments", [("Brokerage A", Decimal("50")), ("Brokerage B", Decimal("100"))]),
+    ]
+    chart = build_grouped_stacked_bar_chart("Assets and Investments (USD)", groups)
+
+    series = chart.series()[0]
+    assert [bar_set.label() for bar_set in series.barSets()] == ["Brokerage B", "Brokerage A"]
+
+
+def test_build_grouped_stacked_bar_chart_category_axis_shows_group_labels(qapp):
+    chart = build_grouped_stacked_bar_chart("Assets and Investments (USD)", _asset_groups())
+
+    axis = chart.axes(Qt.Horizontal)[0]
+    assert list(axis.categories()) == ["Investments", "Assets", "Loans / Liabilities"]
+    assert axis.labelsVisible()
+
+
+def test_build_grouped_stacked_bar_chart_hover_shows_account_and_value(qapp, monkeypatch):
+    shown = []
+    monkeypatch.setattr(charts.QToolTip, "showText", lambda pos, text: shown.append(text))
+
+    chart = build_grouped_stacked_bar_chart("Assets and Investments (USD)", _asset_groups())
+    series = chart.series()[0]
+    brokerage_a = next(bar_set for bar_set in series.barSets() if bar_set.label() == "Brokerage A")
+
+    series.hovered.emit(True, 0, brokerage_a)
+    assert shown == ["Brokerage A: 100.00"]
 
 
 def _points():

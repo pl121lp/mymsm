@@ -25,24 +25,35 @@ from PySide6.QtWidgets import (
 from PySide6.QtCharts import QChart, QChartView
 
 import data
+from busy_indicator import BusyIndicator, run_in_background
 from category_filter_dialog import CategoryFilterDialog, InvestmentFilterDialog
 from category_transactions_dialog import CategoryTransactionsDialog
-from charts import build_bar_chart, build_line_chart, build_pie_chart, build_stacked_area_chart
+from charts import (
+    build_bar_chart,
+    build_grouped_stacked_bar_chart,
+    build_line_chart,
+    build_pie_chart,
+    build_stacked_area_chart,
+)
 from data import ASSET_ACCOUNT_TYPE, INVESTMENT_ACCOUNT_TYPE
 from college_tuition import CollegeTuitionInputs, PersonCollegeCosts, compute_college_tuition_projection
 from college_tuition_controls import CollegeTuitionControlsPanel, default_college_tuition_values
 from college_tuition_settings import load_college_tuition_settings, save_college_tuition_settings
+from dateutils import add_months
 from models import (
     AssetsAndInvestmentsTableModel,
     DictionaryListModel,
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
+    RecurringSubscriptionsTableModel,
     SpendingByCategoryTableModel,
     compute_account_value_history,
     compute_assets_and_investments,
+    compute_assets_and_investments_breakdown,
     compute_income_by_category,
     compute_investment_analysis,
     compute_net_worth_series,
+    compute_recurring_transactions,
     compute_spending_by_category,
     generate_sample_dates,
 )
@@ -59,6 +70,7 @@ INVESTMENT_ANALYSIS_REPORT_ID = "investment_analysis"
 NET_WORTH_PROJECTION_REPORT_ID = "net_worth_projection"
 COLLEGE_TUITION_PROJECTION_REPORT_ID = "college_tuition_projection"
 ASSETS_AND_INVESTMENTS_REPORT_ID = "assets_and_investments"
+RECURRING_SUBSCRIPTIONS_REPORT_ID = "recurring_subscriptions"
 REPORTS = [
     (NET_WORTH_REPORT_ID, "Net worth over time"),
     (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
@@ -67,7 +79,22 @@ REPORTS = [
     (NET_WORTH_PROJECTION_REPORT_ID, "Net Worth Projection"),
     (COLLEGE_TUITION_PROJECTION_REPORT_ID, "College Tuition Projection"),
     (ASSETS_AND_INVESTMENTS_REPORT_ID, "Assets and investments"),
+    (RECURRING_SUBSCRIPTIONS_REPORT_ID, "Recurring / Subscriptions"),
 ]
+
+
+# Detecting recurring charges means fuzzy-matching every payee name against
+# every other one in the window (see models.compute_recurring_transactions),
+# so defaulting to the full transaction history can make an account with
+# years of QFX imports painfully slow to open. 3 years back covers the
+# billing cycles this report cares about (even annual subscriptions) while
+# keeping that candidate set small; the From date can still be widened by
+# hand for a full-history look.
+RECURRING_DEFAULT_LOOKBACK_MONTHS = 36
+
+
+def _today():
+    return date.today()
 
 
 def _to_qdate(python_date):
@@ -88,12 +115,16 @@ class ReportsPane(QWidget):
         self._to_usd = to_usd
         self._active_report_id = None
         self._net_worth_accounts = []
+        self._net_worth_worker = None
         self._category_transactions = []
         self._category_totals = []
         self._selected_categories = None
         self._investment_prices = []
         self._selected_investments = None
         self._projection_asset_values = {}
+        self._assets_investments_breakdown = []
+        self._recurring_transactions = []
+        self._recurring_worker = None
 
         self.list_model = DictionaryListModel(REPORTS)
         self.list_view = QListView()
@@ -105,6 +136,15 @@ class ReportsPane(QWidget):
         self.chart_view = QChartView()
         self.chart_view.setRenderHint(QPainter.Antialiasing)
         self.chart_view.setChart(_empty_chart())
+
+        self.net_worth_busy_indicator = BusyIndicator()
+        self.net_worth_status_row = QWidget()
+        net_worth_status_layout = QHBoxLayout(self.net_worth_status_row)
+        net_worth_status_layout.setContentsMargins(0, 0, 0, 0)
+        net_worth_status_layout.addWidget(self.net_worth_busy_indicator)
+        net_worth_status_layout.addWidget(QLabel("Loading net worth report…"))
+        net_worth_status_layout.addStretch()
+        self.net_worth_status_row.setVisible(False)
 
         self.spending_table_model = SpendingByCategoryTableModel()
         self.income_table_model = IncomeByCategoryTableModel()
@@ -165,6 +205,40 @@ class ReportsPane(QWidget):
         self.assets_investments_table_view.setVisible(False)
         enable_cell_copy(self.assets_investments_table_view)
 
+        self.assets_investments_bar_chart_view = QChartView()
+        self.assets_investments_bar_chart_view.setRenderHint(QPainter.Antialiasing)
+        self.assets_investments_bar_chart_view.setChart(_empty_chart())
+        self.assets_investments_bar_chart_view.setVisible(False)
+
+        self.assets_investments_pie_charts = {}
+        self.assets_investments_pies_panel = QWidget()
+        pies_layout = QHBoxLayout(self.assets_investments_pies_panel)
+        pies_layout.setContentsMargins(0, 0, 0, 0)
+        for section_label in ("Investments", "Assets", "Loans / Liabilities"):
+            pie_chart_view = QChartView()
+            pie_chart_view.setRenderHint(QPainter.Antialiasing)
+            pie_chart_view.setChart(_empty_chart())
+            self.assets_investments_pie_charts[section_label] = pie_chart_view
+            pies_layout.addWidget(pie_chart_view)
+        self.assets_investments_pies_panel.setVisible(False)
+
+        self.recurring_table_model = RecurringSubscriptionsTableModel()
+        self.recurring_table_view = QTableView()
+        self.recurring_table_view.setModel(self.recurring_table_model)
+        self.recurring_table_view.horizontalHeader().setStretchLastSection(True)
+        self.recurring_table_view.setSortingEnabled(True)
+        self.recurring_table_view.setVisible(False)
+        enable_cell_copy(self.recurring_table_view)
+
+        self.recurring_busy_indicator = BusyIndicator()
+        self.recurring_status_row = QWidget()
+        recurring_status_layout = QHBoxLayout(self.recurring_status_row)
+        recurring_status_layout.setContentsMargins(0, 0, 0, 0)
+        recurring_status_layout.addWidget(self.recurring_busy_indicator)
+        recurring_status_layout.addWidget(QLabel("Detecting recurring charges…"))
+        recurring_status_layout.addStretch()
+        self.recurring_status_row.setVisible(False)
+
         self._category_reports = {
             SPENDING_BY_CATEGORY_REPORT_ID: {
                 "compute": compute_spending_by_category,
@@ -216,10 +290,15 @@ class ReportsPane(QWidget):
         chart_panel = QWidget()
         chart_layout = QVBoxLayout(chart_panel)
         chart_layout.setContentsMargins(0, 0, 0, 0)
+        chart_layout.addWidget(self.net_worth_status_row)
         chart_layout.addWidget(self.chart_view, 1)
         chart_layout.addWidget(self.category_table_view)
         chart_layout.addWidget(self.investment_table_view)
         chart_layout.addWidget(self.assets_investments_table_view)
+        chart_layout.addWidget(self.recurring_status_row)
+        chart_layout.addWidget(self.recurring_table_view)
+        chart_layout.addWidget(self.assets_investments_bar_chart_view, 1)
+        chart_layout.addWidget(self.assets_investments_pies_panel, 1)
         chart_layout.addWidget(self.investment_controls_row)
         chart_layout.addWidget(self.view_selector_row)
         chart_layout.addWidget(self.projection_controls_scroll_area, 1)
@@ -241,10 +320,16 @@ class ReportsPane(QWidget):
         if not indexes:
             self._active_report_id = None
             self.chart_view.setChart(_empty_chart())
+            self.net_worth_status_row.setVisible(False)
             self.spending_table_model.set_categories([])
             self.income_table_model.set_categories([])
             self.investment_table_model.set_investments([])
             self.assets_investments_table_model.set_rows([])
+            self.recurring_table_model.set_recurring([])
+            self.recurring_status_row.setVisible(False)
+            self.assets_investments_bar_chart_view.setChart(_empty_chart())
+            self.assets_investments_bar_chart_view.setVisible(False)
+            self.assets_investments_pies_panel.setVisible(False)
             self.range_label.setText("")
             self.view_selector_row.setVisible(False)
             self.investment_controls_row.setVisible(False)
@@ -258,12 +343,22 @@ class ReportsPane(QWidget):
         is_projection_report = report_id == NET_WORTH_PROJECTION_REPORT_ID
         is_college_tuition_report = report_id == COLLEGE_TUITION_PROJECTION_REPORT_ID
         is_assets_investments_report = report_id == ASSETS_AND_INVESTMENTS_REPORT_ID
-        self.view_selector_row.setVisible(is_category_report)
+        is_recurring_report = report_id == RECURRING_SUBSCRIPTIONS_REPORT_ID
+        self.view_selector_row.setVisible(is_category_report or is_assets_investments_report)
+        self.custom_categories_button.setVisible(is_category_report)
         if is_category_report:
             self.view_selector.blockSignals(True)
+            self.view_selector.clear()
+            self.view_selector.addItems(["Table", "Pie Chart"])
             self.view_selector.setCurrentIndex(0)
             self.view_selector.blockSignals(False)
             self.category_table_view.setModel(self._category_reports[report_id]["model"])
+        elif is_assets_investments_report:
+            self.view_selector.blockSignals(True)
+            self.view_selector.clear()
+            self.view_selector.addItems(["Table", "Bar Chart", "Pie Charts"])
+            self.view_selector.setCurrentIndex(0)
+            self.view_selector.blockSignals(False)
         self.chart_view.setVisible(
             report_id
             in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID, COLLEGE_TUITION_PROJECTION_REPORT_ID)
@@ -274,6 +369,9 @@ class ReportsPane(QWidget):
         self.projection_controls_scroll_area.setVisible(is_projection_report)
         self.college_tuition_controls_scroll_area.setVisible(is_college_tuition_report)
         self.assets_investments_table_view.setVisible(is_assets_investments_report)
+        self.recurring_table_view.setVisible(is_recurring_report)
+        self.assets_investments_bar_chart_view.setVisible(False)
+        self.assets_investments_pies_panel.setVisible(False)
         self.range_controls_row.setVisible(
             not is_projection_report and not is_college_tuition_report and not is_assets_investments_report
         )
@@ -292,15 +390,25 @@ class ReportsPane(QWidget):
             self._load_college_tuition_report()
         elif is_assets_investments_report:
             self._load_assets_and_investments_report()
+        elif is_recurring_report:
+            self._load_recurring_report()
 
     def _on_view_mode_changed(self):
-        if self._active_report_id not in self._category_reports:
-            return
-        is_pie_chart = self.view_selector.currentText() == "Pie Chart"
-        self.chart_view.setVisible(is_pie_chart)
-        self.category_table_view.setVisible(not is_pie_chart)
-        if is_pie_chart:
-            self._render_pie_chart()
+        if self._active_report_id in self._category_reports:
+            is_pie_chart = self.view_selector.currentText() == "Pie Chart"
+            self.chart_view.setVisible(is_pie_chart)
+            self.category_table_view.setVisible(not is_pie_chart)
+            if is_pie_chart:
+                self._render_pie_chart()
+        elif self._active_report_id == ASSETS_AND_INVESTMENTS_REPORT_ID:
+            mode = self.view_selector.currentText()
+            self.assets_investments_table_view.setVisible(mode == "Table")
+            self.assets_investments_bar_chart_view.setVisible(mode == "Bar Chart")
+            self.assets_investments_pies_panel.setVisible(mode == "Pie Charts")
+            if mode == "Bar Chart":
+                self._render_assets_investments_bar_chart()
+            elif mode == "Pie Charts":
+                self._render_assets_investments_pie_charts()
 
     def _load_net_worth_report(self):
         try:
@@ -309,8 +417,7 @@ class ReportsPane(QWidget):
             self._report_error(f"Failed to load net worth report: {exc}")
             return
 
-        account_series = []
-        earliest = latest = None
+        account_inputs = []
         for account_id, _name, account_type, currency, _balance, is_closed, _is_favorite in accounts:
             is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
             opening_balance = data.get_opening_balance(self._conn, account_id)
@@ -320,30 +427,49 @@ class ReportsPane(QWidget):
             except Exception as exc:
                 self._report_error(f"Failed to load net worth report: {exc}")
                 return
-            history = compute_account_value_history(transactions, opening_balance, is_investment)
-            initial_value = Decimal("0") if is_investment else (opening_balance or Decimal("0"))
-            account_series.append((currency, initial_value, history, date_opened, is_closed))
-            if history:
-                earliest = history[0][0] if earliest is None else min(earliest, history[0][0])
-                latest = history[-1][0] if latest is None else max(latest, history[-1][0])
+            account_inputs.append((currency, opening_balance, is_investment, transactions, date_opened, is_closed))
 
-        if earliest is None:
-            self._net_worth_accounts = []
-            self.chart_view.setChart(_empty_chart())
-            self.range_label.setText("")
-            self._report_error("No transactions available for net worth report.")
-            return
+        def _compute():
+            account_series = []
+            earliest = latest = None
+            for currency, opening_balance, is_investment, transactions, date_opened, is_closed in account_inputs:
+                history = compute_account_value_history(transactions, opening_balance, is_investment)
+                initial_value = Decimal("0") if is_investment else (opening_balance or Decimal("0"))
+                account_series.append((currency, initial_value, history, date_opened, is_closed))
+                if history:
+                    earliest = history[0][0] if earliest is None else min(earliest, history[0][0])
+                    latest = history[-1][0] if latest is None else max(latest, history[-1][0])
+            return account_series, earliest, latest
 
-        self._net_worth_accounts = account_series
+        def _on_success(result):
+            account_series, earliest, latest = result
+            if earliest is None:
+                self.net_worth_status_row.setVisible(False)
+                self._net_worth_accounts = []
+                self.chart_view.setChart(_empty_chart())
+                self.range_label.setText("")
+                self._report_error("No transactions available for net worth report.")
+                return
 
-        self.start_date_edit.blockSignals(True)
-        self.end_date_edit.blockSignals(True)
-        self.start_date_edit.setDate(_to_qdate(earliest))
-        self.end_date_edit.setDate(_to_qdate(latest))
-        self.start_date_edit.blockSignals(False)
-        self.end_date_edit.blockSignals(False)
+            self._net_worth_accounts = account_series
 
-        self._render_net_worth_chart(earliest, latest)
+            self.start_date_edit.blockSignals(True)
+            self.end_date_edit.blockSignals(True)
+            self.start_date_edit.setDate(_to_qdate(earliest))
+            self.end_date_edit.setDate(_to_qdate(latest))
+            self.start_date_edit.blockSignals(False)
+            self.end_date_edit.blockSignals(False)
+
+            self._render_net_worth_chart(earliest, latest)
+
+        def _on_error(message):
+            self.net_worth_status_row.setVisible(False)
+            self._report_error(f"Failed to load net worth report: {message}")
+
+        self.net_worth_status_row.setVisible(True)
+        self._net_worth_worker = run_in_background(
+            _compute, self.net_worth_busy_indicator, on_success=_on_success, on_error=_on_error, parent=self
+        )
 
     def _on_range_updated(self):
         if self._active_report_id == NET_WORTH_REPORT_ID:
@@ -369,15 +495,40 @@ class ReportsPane(QWidget):
                 self._report_error("Start date must be on or before end date.")
                 return
             self._render_investment_table(start, end)
+        elif self._active_report_id == RECURRING_SUBSCRIPTIONS_REPORT_ID:
+            start = self.start_date_edit.date().toPython()
+            end = self.end_date_edit.date().toPython()
+            if start > end:
+                self._report_error("Start date must be on or before end date.")
+                return
+            self._render_recurring_table(start, end)
 
     def _render_net_worth_chart(self, start, end):
-        sample_dates = generate_sample_dates(start, end, months=2)
-        series = compute_net_worth_series(self._net_worth_accounts, sample_dates, self._to_usd)
-        categories = [sample_date.isoformat() for sample_date, _ in series]
-        values = [total for _, total in series]
-        chart = build_bar_chart("Net Worth Over Time (USD)", categories, values)
-        self.chart_view.setChart(chart)
-        self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+        accounts = self._net_worth_accounts
+        to_usd = self._to_usd
+
+        def _compute():
+            sample_dates = generate_sample_dates(start, end, months=2)
+            series = compute_net_worth_series(accounts, sample_dates, to_usd)
+            categories = [sample_date.isoformat() for sample_date, _ in series]
+            values = [total for _, total in series]
+            return categories, values
+
+        def _on_success(result):
+            categories, values = result
+            chart = build_bar_chart("Net Worth Over Time (USD)", categories, values)
+            self.chart_view.setChart(chart)
+            self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+            self.net_worth_status_row.setVisible(False)
+
+        def _on_error(message):
+            self.net_worth_status_row.setVisible(False)
+            self._report_error(f"Failed to render net worth report: {message}")
+
+        self.net_worth_status_row.setVisible(True)
+        self._net_worth_worker = run_in_background(
+            _compute, self.net_worth_busy_indicator, on_success=_on_success, on_error=_on_error, parent=self
+        )
 
     def _load_category_report(self, report_id):
         self._selected_categories = None
@@ -455,6 +606,61 @@ class ReportsPane(QWidget):
             investments = [row for row in investments if row[0] in self._selected_investments]
         self.investment_table_model.set_investments(investments)
         self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+
+    def _load_recurring_report(self):
+        try:
+            transactions = data.list_recurring_candidate_transactions(self._conn)
+        except Exception as exc:
+            self._report_error(f"Failed to load recurring/subscriptions report: {exc}")
+            return
+
+        if not transactions:
+            self._recurring_transactions = []
+            self.recurring_table_model.set_recurring([])
+            self.range_label.setText("")
+            self._report_error("No payee-attributed spending available for recurring/subscriptions report.")
+            return
+
+        self._recurring_transactions = transactions
+        earliest = min(txn_date for _, _, _, txn_date, _, _ in transactions)
+        latest = max(txn_date for _, _, _, txn_date, _, _ in transactions)
+        default_start = max(earliest, add_months(_today(), -RECURRING_DEFAULT_LOOKBACK_MONTHS))
+
+        self.start_date_edit.blockSignals(True)
+        self.end_date_edit.blockSignals(True)
+        self.start_date_edit.setDate(_to_qdate(default_start))
+        self.end_date_edit.setDate(_to_qdate(latest))
+        self.start_date_edit.blockSignals(False)
+        self.end_date_edit.blockSignals(False)
+
+        self._render_recurring_table(default_start, latest)
+
+    def _render_recurring_table(self, start, end):
+        self.recurring_status_row.setVisible(True)
+        self.update_range_button.setEnabled(False)
+        transactions = self._recurring_transactions
+        to_usd = self._to_usd
+
+        def _on_success(recurring):
+            self.recurring_table_model.set_recurring(recurring)
+            self.range_label.setText(f"Showing {start.isoformat()} to {end.isoformat()}")
+            self.recurring_status_row.setVisible(False)
+            self.update_range_button.setEnabled(True)
+
+        def _on_error(message):
+            self.recurring_status_row.setVisible(False)
+            self.update_range_button.setEnabled(True)
+            self._report_error(f"Failed to compute recurring/subscriptions report: {message}")
+
+        # Keep a reference on self -- PySide destroys a QThread whose last
+        # Python reference disappears while it's still running.
+        self._recurring_worker = run_in_background(
+            lambda: compute_recurring_transactions(transactions, start, end, to_usd),
+            self.recurring_busy_indicator,
+            on_success=_on_success,
+            on_error=_on_error,
+            parent=self,
+        )
 
     def _load_projection_report(self):
         try:
@@ -624,6 +830,18 @@ class ReportsPane(QWidget):
             return
         rows = compute_assets_and_investments(accounts, self._to_usd)
         self.assets_investments_table_model.set_rows(rows)
+        self._assets_investments_breakdown = compute_assets_and_investments_breakdown(accounts, self._to_usd)
+
+    def _render_assets_investments_bar_chart(self):
+        chart = build_grouped_stacked_bar_chart(
+            "Assets and Investments (USD)", self._assets_investments_breakdown
+        )
+        self.assets_investments_bar_chart_view.setChart(chart)
+
+    def _render_assets_investments_pie_charts(self):
+        for section_label, accounts in self._assets_investments_breakdown:
+            chart = build_pie_chart(section_label, accounts)
+            self.assets_investments_pie_charts[section_label].setChart(chart)
 
     def _on_custom_investments_clicked(self):
         all_names = sorted({name for name, _txn_date, _price in self._investment_prices})

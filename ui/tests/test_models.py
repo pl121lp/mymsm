@@ -11,16 +11,19 @@ from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
+    RecurringSubscriptionsTableModel,
     SearchResultTableModel,
     SpendingByCategoryTableModel,
     TransactionTableModel,
     activity_label,
     build_loan_transaction_rows,
     compute_account_value_history,
+    compute_assets_and_investments_breakdown,
     compute_income_by_category,
     compute_investment_analysis,
     compute_loan_totals,
     compute_net_worth_series,
+    compute_recurring_transactions,
     compute_spending_by_category,
     generate_sample_dates,
 )
@@ -852,6 +855,383 @@ def test_compute_income_by_category_ignores_negative_amounts():
     assert result == [("Salary", Decimal("1200.00"))]
 
 
+def test_compute_recurring_transactions_detects_monthly_subscription():
+    transactions = [
+        (1, "Netflix", "Checking", date(2024, 1, 15), Decimal("-15.00"), "USD"),
+        (1, "Netflix", "Checking", date(2024, 2, 15), Decimal("-15.00"), "USD"),
+        (1, "Netflix", "Checking", date(2024, 3, 15), Decimal("-15.00"), "USD"),
+        (1, "Netflix", "Checking", date(2024, 4, 15), Decimal("-15.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Netflix", "Checking", "Monthly", 4, date(2024, 1, 15), date(2024, 4, 15), Decimal("15.00"))
+    ]
+
+
+def test_compute_recurring_transactions_detects_weekly_subscription():
+    transactions = [
+        (1, "Meal Kit", "Checking", date(2024, 1, 1), Decimal("-3.00"), "USD"),
+        (1, "Meal Kit", "Checking", date(2024, 1, 8), Decimal("-3.00"), "USD"),
+        (1, "Meal Kit", "Checking", date(2024, 1, 15), Decimal("-3.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Meal Kit", "Checking", "Weekly", 3, date(2024, 1, 1), date(2024, 1, 15), Decimal("13.00"))
+    ]
+
+
+def test_compute_recurring_transactions_detects_annual_subscription():
+    transactions = [
+        (1, "Domain Renewal", "Checking", date(2022, 6, 1), Decimal("-12.00"), "USD"),
+        (1, "Domain Renewal", "Checking", date(2023, 6, 1), Decimal("-12.00"), "USD"),
+        (1, "Domain Renewal", "Checking", date(2024, 6, 1), Decimal("-12.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2022, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Domain Renewal", "Checking", "Annual", 3, date(2022, 6, 1), date(2024, 6, 1), Decimal("1.00"))
+    ]
+
+
+def test_compute_recurring_transactions_requires_minimum_occurrences():
+    transactions = [
+        (1, "One-off Store", "Checking", date(2024, 1, 15), Decimal("-15.00"), "USD"),
+        (1, "One-off Store", "Checking", date(2024, 2, 15), Decimal("-15.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == []
+
+
+def test_compute_recurring_transactions_tolerates_a_price_increase_beyond_ten_percent():
+    # A real HOA/utility/insurance price increase can easily exceed a flat
+    # 10% band (this one is ~17%); a single step between two price tiers
+    # shouldn't fracture an otherwise perfectly regular monthly series.
+    transactions = [
+        (1, "HOA Dues", "Checking", date(2024, 1, 2), Decimal("-90.00"), "USD"),
+        (1, "HOA Dues", "Checking", date(2024, 2, 2), Decimal("-90.00"), "USD"),
+        (1, "HOA Dues", "Checking", date(2024, 3, 2), Decimal("-90.00"), "USD"),
+        (1, "HOA Dues", "Checking", date(2024, 4, 2), Decimal("-105.00"), "USD"),
+        (1, "HOA Dues", "Checking", date(2024, 5, 2), Decimal("-105.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("HOA Dues", "Checking", "Monthly", 5, date(2024, 1, 2), date(2024, 5, 2), Decimal("105.00"))
+    ]
+
+
+def test_compute_recurring_transactions_splits_concurrent_bills_under_one_payee():
+    # A single payee can bill more than one thing at once -- e.g. a mortgage
+    # statement's principal, escrow, and total lines, all posted the same
+    # day under the same payee. Averaging them into one median would reject
+    # all of them; each should be evaluated (and reported) independently.
+    transactions = [
+        (1, "Mortgage Co", "Checking", date(2024, 1, 5), Decimal("-1000.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 1, 5), Decimal("-2100.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 2, 5), Decimal("-1000.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 2, 5), Decimal("-2100.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 3, 5), Decimal("-1000.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 3, 5), Decimal("-2100.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert sorted(result, key=lambda row: row[6]) == [
+        ("Mortgage Co", "Checking", "Monthly", 3, date(2024, 1, 5), date(2024, 3, 5), Decimal("1000.00")),
+        ("Mortgage Co", "Checking", "Monthly", 3, date(2024, 1, 5), date(2024, 3, 5), Decimal("2100.00")),
+    ]
+
+
+def test_compute_recurring_transactions_ignores_rounding_adjustment_lines():
+    transactions = [
+        (1, "Mortgage Co", "Checking", date(2024, 1, 5), Decimal("-0.01"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 1, 5), Decimal("-1000.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 2, 5), Decimal("-0.01"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 2, 5), Decimal("-1000.00"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 3, 5), Decimal("-0.01"), "USD"),
+        (1, "Mortgage Co", "Checking", date(2024, 3, 5), Decimal("-1000.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Mortgage Co", "Checking", "Monthly", 3, date(2024, 1, 5), date(2024, 3, 5), Decimal("1000.00"))
+    ]
+
+
+def test_compute_recurring_transactions_treats_same_day_duplicate_amount_as_one_occurrence():
+    # A payment that posts to both a checking account and a linked credit
+    # card on the same day is one billing event, not two -- counting it
+    # twice would inject a spurious zero-day gap into the interval check.
+    transactions = [
+        (1, "Verizon", "Checking", date(2024, 1, 10), Decimal("-95.00"), "USD"),
+        (1, "Verizon", "Credit Card", date(2024, 1, 10), Decimal("-95.00"), "USD"),
+        (1, "Verizon", "Checking", date(2024, 2, 10), Decimal("-95.00"), "USD"),
+        (1, "Verizon", "Checking", date(2024, 3, 10), Decimal("-95.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Verizon", "Checking", "Monthly", 3, date(2024, 1, 10), date(2024, 3, 10), Decimal("95.00"))
+    ]
+
+
+def test_compute_recurring_transactions_rejects_irregular_intervals():
+    transactions = [
+        (1, "Irregular Shop", "Checking", date(2024, 1, 1), Decimal("-20.00"), "USD"),
+        (1, "Irregular Shop", "Checking", date(2024, 1, 20), Decimal("-20.00"), "USD"),
+        (1, "Irregular Shop", "Checking", date(2024, 3, 15), Decimal("-20.00"), "USD"),
+        (1, "Irregular Shop", "Checking", date(2024, 7, 1), Decimal("-20.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == []
+
+
+def test_compute_recurring_transactions_filters_to_date_range():
+    transactions = [
+        (1, "Gym", "Checking", date(2024, 1, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "Checking", date(2024, 2, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "Checking", date(2024, 3, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "Checking", date(2024, 4, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "Checking", date(2024, 5, 1), Decimal("-30.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 3, 1), date(2024, 4, 30), to_usd=lambda currency, amount: amount
+    )
+    assert result == []
+
+
+def test_compute_recurring_transactions_converts_currency():
+    transactions = [
+        (1, "Foreign Sub", "Checking", date(2024, 1, 15), Decimal("-100.00"), "SEK"),
+        (1, "Foreign Sub", "Checking", date(2024, 2, 15), Decimal("-100.00"), "SEK"),
+        (1, "Foreign Sub", "Checking", date(2024, 3, 15), Decimal("-100.00"), "SEK"),
+    ]
+    result = compute_recurring_transactions(
+        transactions,
+        date(2024, 1, 1),
+        date(2024, 12, 31),
+        to_usd=lambda currency, amount: amount * Decimal("0.1"),
+    )
+    assert result == [
+        ("Foreign Sub", "Checking", "Monthly", 3, date(2024, 1, 15), date(2024, 3, 15), Decimal("10.000"))
+    ]
+
+
+def test_compute_recurring_transactions_sorts_by_monthly_cost_descending():
+    transactions = [
+        (1, "Cheap Sub", "Checking", date(2024, 1, 15), Decimal("-5.00"), "USD"),
+        (1, "Cheap Sub", "Checking", date(2024, 2, 15), Decimal("-5.00"), "USD"),
+        (1, "Cheap Sub", "Checking", date(2024, 3, 15), Decimal("-5.00"), "USD"),
+        (2, "Pricey Sub", "Checking", date(2024, 1, 15), Decimal("-50.00"), "USD"),
+        (2, "Pricey Sub", "Checking", date(2024, 2, 15), Decimal("-50.00"), "USD"),
+        (2, "Pricey Sub", "Checking", date(2024, 3, 15), Decimal("-50.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert [name for name, *_ in result] == ["Pricey Sub", "Cheap Sub"]
+
+
+def test_compute_recurring_transactions_reports_the_most_recently_charged_account():
+    transactions = [
+        (1, "Gym", "Old Card", date(2024, 1, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "New Card", date(2024, 2, 1), Decimal("-30.00"), "USD"),
+        (1, "Gym", "New Card", date(2024, 3, 1), Decimal("-30.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert result == [
+        ("Gym", "New Card", "Monthly", 3, date(2024, 1, 1), date(2024, 3, 1), Decimal("30.00"))
+    ]
+
+
+def test_compute_recurring_transactions_empty_transactions_returns_empty_list():
+    assert (
+        compute_recurring_transactions(
+            [], date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+        )
+        == []
+    )
+
+
+def test_compute_recurring_transactions_merges_payees_with_a_shared_name_prefix():
+    transactions = [
+        (1, "Advance CHATGPT SUBSCRIPTION HTT", "Checking", date(2024, 1, 15), Decimal("-20.00"), "USD"),
+        (2, "Advance CHATGPT SUBSCRIPTION OPE", "Checking", date(2024, 2, 15), Decimal("-20.00"), "USD"),
+        (1, "Advance CHATGPT SUBSCRIPTION HTT", "Checking", date(2024, 3, 15), Decimal("-20.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    # payee_merge.find_merge_groups() strips the generic "Advance " prefix
+    # before comparing, so these two count as one merchant even though the
+    # trailing word (a truncated URL fragment) never matches.
+    assert result == [
+        (
+            "Advance CHATGPT SUBSCRIPTION HTT",
+            "Checking",
+            "Monthly",
+            3,
+            date(2024, 1, 15),
+            date(2024, 3, 15),
+            Decimal("20.00"),
+        )
+    ]
+
+
+def test_compute_recurring_transactions_merges_payees_with_a_varying_reference_number():
+    transactions = [
+        (1, "4S Ranch Master  Assn Dues  2267", "Checking", date(2024, 1, 1), Decimal("-150.00"), "USD"),
+        (2, "4S Ranch Master  Assn Dues  2397", "Checking", date(2024, 2, 1), Decimal("-150.00"), "USD"),
+        (1, "4S Ranch Master  Assn Dues  2267", "Checking", date(2024, 3, 1), Decimal("-150.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    # find_merge_groups() drops digits before comparing, so the varying dues
+    # statement reference number doesn't prevent the merge; the label is
+    # whichever raw variant scored best (here: the one with more occurrences).
+    assert result == [
+        (
+            "4S Ranch Master  Assn Dues  2267",
+            "Checking",
+            "Monthly",
+            3,
+            date(2024, 1, 1),
+            date(2024, 3, 1),
+            Decimal("150.00"),
+        )
+    ]
+
+
+def test_compute_recurring_transactions_merges_single_occurrence_payees_sharing_a_merchant():
+    # Each of these payee_ids only has one charge on its own -- as commonly
+    # happens when a bank/QFX import appends a distinct reference number to
+    # the payee name every statement -- so without merging none would reach
+    # min_occurrences even though they're clearly the same recurring bill.
+    transactions = [
+        (1, "VERIZON WIRELESS PAYMENTS 8291", "Checking", date(2024, 1, 10), Decimal("-95.00"), "USD"),
+        (2, "VERIZON WIRELESS PAYMENTS 7734", "Checking", date(2024, 2, 10), Decimal("-95.00"), "USD"),
+        (3, "VERIZON WIRELESS PAYMENTS 4402", "Checking", date(2024, 3, 10), Decimal("-95.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    # All three variants are equally "clean" (same tie-break score), so which
+    # exact one is picked as the label is an implementation detail of
+    # find_merge_groups()'s canonical-name selection -- what matters here is
+    # that they merged into a single detected series at all.
+    assert len(result) == 1
+    label, account, interval_label, occurrences, first_date, last_date, monthly_cost = result[0]
+    assert label in {
+        "VERIZON WIRELESS PAYMENTS 8291",
+        "VERIZON WIRELESS PAYMENTS 7734",
+        "VERIZON WIRELESS PAYMENTS 4402",
+    }
+    assert (account, interval_label, occurrences, first_date, last_date, monthly_cost) == (
+        "Checking",
+        "Monthly",
+        3,
+        date(2024, 1, 10),
+        date(2024, 3, 10),
+        Decimal("95.00"),
+    )
+
+
+def test_compute_recurring_transactions_does_not_merge_unrelated_payees_with_a_short_shared_prefix():
+    transactions = [
+        (1, "Costco Wholesale", "Checking", date(2024, 1, 1), Decimal("-60.00"), "USD"),
+        (1, "Costco Wholesale", "Checking", date(2024, 2, 1), Decimal("-60.00"), "USD"),
+        (1, "Costco Wholesale", "Checking", date(2024, 3, 1), Decimal("-60.00"), "USD"),
+        (2, "Comcast Cable", "Checking", date(2024, 1, 5), Decimal("-80.00"), "USD"),
+        (2, "Comcast Cable", "Checking", date(2024, 2, 5), Decimal("-80.00"), "USD"),
+        (2, "Comcast Cable", "Checking", date(2024, 3, 5), Decimal("-80.00"), "USD"),
+    ]
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert {row[0] for row in result} == {"Costco Wholesale", "Comcast Cable"}
+
+
+def test_compute_recurring_transactions_skips_fuzzy_merge_for_an_oversized_bucket():
+    # A personal Amazon/eBay/etc. order history can produce 1000+ distinct
+    # payee rows all starting "Amazon" (one per wildly different item) --
+    # fuzzy-comparing all of them is slow and not useful, so payees sharing
+    # a first token with 250+ other payees fall back to their own name
+    # rather than being merge-compared. Two payee_ids that would otherwise
+    # merge (same "Amazon Music Unlimited" text, differing trailing word)
+    # split one payee's occurrences across two IDs and so, unmerged,
+    # neither reaches min_occurrences.
+    transactions = [
+        (100, "Amazon Music Unlimited HTT", "Checking", date(2024, 1, 15), Decimal("-9.99"), "USD"),
+        (100, "Amazon Music Unlimited HTT", "Checking", date(2024, 2, 15), Decimal("-9.99"), "USD"),
+        (101, "Amazon Music Unlimited OPE", "Checking", date(2024, 3, 15), Decimal("-9.99"), "USD"),
+    ]
+    for i in range(260):
+        letters = chr(ord("A") + i // 26) + chr(ord("A") + i % 26)
+        transactions.append(
+            (200 + i, f"Amazon Order {letters}", "Checking", date(2024, 1, 1), Decimal("-25.00"), "USD")
+        )
+
+    result = compute_recurring_transactions(
+        transactions, date(2024, 1, 1), date(2024, 12, 31), to_usd=lambda currency, amount: amount
+    )
+    assert "Amazon Music Unlimited HTT" not in {row[0] for row in result}
+    assert "Amazon Music Unlimited OPE" not in {row[0] for row in result}
+
+
+def test_recurring_subscriptions_model_columns_and_formatting():
+    model = RecurringSubscriptionsTableModel(
+        [("Netflix", "Checking", "Monthly", 4, date(2024, 1, 15), date(2024, 4, 15), Decimal("15.00"))]
+    )
+    assert model.rowCount() == 1
+    assert model.columnCount() == 7
+    assert _data(model, 0, 0) == "Netflix"
+    assert _data(model, 0, 1) == "Checking"
+    assert _data(model, 0, 2) == "Monthly"
+    assert _data(model, 0, 3) == "4"
+    assert _data(model, 0, 4) == "2024-01-15"
+    assert _data(model, 0, 5) == "2024-04-15"
+    assert _data(model, 0, 6) == "15.00"
+
+
+def test_recurring_subscriptions_model_set_recurring_replaces_contents():
+    model = RecurringSubscriptionsTableModel()
+    assert model.rowCount() == 0
+    model.set_recurring(
+        [("Gym", "Checking", "Monthly", 3, date(2024, 1, 1), date(2024, 3, 1), Decimal("30.00"))]
+    )
+    assert model.rowCount() == 1
+    assert _data(model, 0, 0) == "Gym"
+
+
+def test_recurring_subscriptions_model_sort_orders_by_column_value():
+    model = RecurringSubscriptionsTableModel(
+        [
+            ("Gym", "Checking", "Monthly", 3, date(2024, 1, 1), date(2024, 3, 1), Decimal("30.00")),
+            ("Netflix", "Checking", "Monthly", 4, date(2024, 1, 15), date(2024, 4, 15), Decimal("15.00")),
+        ]
+    )
+    model.sort(6, Qt.AscendingOrder)
+    assert [_data(model, row, 0) for row in range(model.rowCount())] == ["Netflix", "Gym"]
+
+    model.sort(6, Qt.DescendingOrder)
+    assert [_data(model, row, 0) for row in range(model.rowCount())] == ["Gym", "Netflix"]
+
+
 def test_compute_investment_analysis_sorts_by_highest_percentage_increase_first():
     prices = [
         ("Fund A", date(2024, 1, 1), Decimal("10.00")),
@@ -908,6 +1288,43 @@ def test_compute_investment_analysis_zero_lowest_price_does_not_crash():
 
 def test_compute_investment_analysis_empty_prices_returns_empty_list():
     assert compute_investment_analysis([], date(2024, 1, 1), date(2024, 12, 31)) == []
+
+
+def test_compute_assets_and_investments_breakdown_groups_accounts_into_sections():
+    accounts = [
+        (1, "Brokerage A", "5", "USD", Decimal("100"), False, False),
+        (2, "House", "3", "USD", Decimal("500000"), False, False),
+        (3, "Car Loan", "6", "USD", Decimal("-15000"), False, False),
+    ]
+    result = compute_assets_and_investments_breakdown(accounts, to_usd=lambda cur, amt: amt)
+    assert result == [
+        ("Investments", [("Brokerage A", Decimal("100"))]),
+        ("Assets", [("House", Decimal("500000"))]),
+        ("Loans / Liabilities", [("Car Loan", Decimal("15000"))]),
+    ]
+
+
+def test_compute_assets_and_investments_breakdown_sorts_accounts_by_name_within_section():
+    accounts = [
+        (1, "Zeta Fund", "5", "USD", Decimal("10"), False, False),
+        (2, "Alpha Fund", "5", "USD", Decimal("20"), False, False),
+    ]
+    result = compute_assets_and_investments_breakdown(accounts, to_usd=lambda cur, amt: amt)
+    assert result[0] == ("Investments", [("Alpha Fund", Decimal("20")), ("Zeta Fund", Decimal("10"))])
+
+
+def test_compute_assets_and_investments_breakdown_excludes_other_account_types():
+    accounts = [(1, "Checking", "0", "USD", Decimal("500"), False, False)]
+    result = compute_assets_and_investments_breakdown(accounts, to_usd=lambda cur, amt: amt)
+    assert result == [("Investments", []), ("Assets", []), ("Loans / Liabilities", [])]
+
+
+def test_compute_assets_and_investments_breakdown_converts_currency_to_usd():
+    accounts = [(1, "SEK Fund", "5", "SEK", Decimal("1000"), False, False)]
+    result = compute_assets_and_investments_breakdown(
+        accounts, to_usd=lambda cur, amt: amt * Decimal("0.1") if cur == "SEK" else amt
+    )
+    assert result[0] == ("Investments", [("SEK Fund", Decimal("100.0"))])
 
 
 def test_investment_analysis_model_columns_are_name_percent_prices_and_range():

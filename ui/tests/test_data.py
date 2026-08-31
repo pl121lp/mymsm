@@ -13,6 +13,7 @@ from data import (
     list_investment_prices,
     list_loan_interest_payments,
     list_payee_transactions,
+    list_recurring_candidate_transactions,
     list_securities,
     list_security_history,
     list_transactions,
@@ -253,6 +254,28 @@ def test_list_category_spending_excludes_uncategorized_transactions(dict_conn):
     names = [row[1] for row in list_category_spending(dict_conn)]
     assert "misc" not in names
     assert len(list_category_spending(dict_conn)) == 3
+
+
+def test_list_recurring_candidate_transactions_returns_payee_spending_across_accounts(dict_conn):
+    assert list_recurring_candidate_transactions(dict_conn) == [
+        (100, "Store A", "Checking", date(2024, 3, 15), Decimal("-52.30"), "USD"),
+        (101, "Store B", "Savings", date(2024, 3, 10), Decimal("-20.00"), "USD"),
+    ]
+
+
+def test_list_recurring_candidate_transactions_excludes_transactions_without_a_payee(dict_conn):
+    names = [row[1] for row in list_recurring_candidate_transactions(dict_conn)]
+    assert "electric bill" not in names
+    assert len(list_recurring_candidate_transactions(dict_conn)) == 2
+
+
+def test_list_recurring_candidate_transactions_excludes_positive_amounts(dict_conn):
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(2000, 1, NULL, 100, '2024-03-20', 10.00, 'refund', NULL, NULL, NULL, NULL, NULL)"
+    )
+    amounts = [row[4] for row in list_recurring_candidate_transactions(dict_conn)]
+    assert Decimal("10.00") not in amounts
 
 
 def test_list_securities_returns_all_ordered_by_name(dict_conn):

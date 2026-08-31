@@ -9,6 +9,7 @@ from PySide6.QtCharts import (
     QDateTimeAxis,
     QLineSeries,
     QPieSeries,
+    QStackedBarSeries,
     QValueAxis,
 )
 from PySide6.QtCore import QDateTime, Qt
@@ -210,6 +211,65 @@ def build_bar_chart(title, categories, values):
         if y_min == y_max:
             y_min, y_max = y_min - 1, y_max + 1
         axis_y.setRange(y_min, y_max)
+    chart.addAxis(axis_y, Qt.AlignLeft)
+    series.attachAxis(axis_y)
+
+    return chart
+
+
+def build_grouped_stacked_bar_chart(title, groups):
+    """Build a bar chart with one bar per group, each bar stacked from its
+    accounts' individual contributions.
+
+    groups is a list of (group_label, [(account_name, value), ...]) pairs,
+    e.g. from compute_assets_and_investments_breakdown(). One QBarSet is
+    created per account, holding that account's value in its own group's
+    slot and 0 in every other group -- so each bar's stacked segments are
+    exactly that group's accounts. Within each group, accounts are added
+    largest value first so that -- since QStackedBarSeries stacks bars
+    bottom-up in the order they're added -- the largest account ends up at
+    the bottom of its bar. Hovering a segment shows its account name and
+    value.
+    """
+    chart = QChart()
+    chart.setTheme(theme.chart_theme())
+    chart.setTitle(title)
+
+    group_labels = [group_label for group_label, _accounts in groups]
+    account_values = {}
+    for group_index, (_group_label, accounts) in enumerate(groups):
+        sorted_accounts = sorted(accounts, key=lambda account: account[1], reverse=True)
+        for account_name, value in sorted_accounts:
+            if account_name not in account_values:
+                account_values[account_name] = [0.0] * len(groups)
+            account_values[account_name][group_index] = float(value)
+
+    series = QStackedBarSeries()
+    bar_sets = []
+    for account_name, values in account_values.items():
+        bar_set = QBarSet(account_name)
+        bar_set.append(values)
+        series.append(bar_set)
+        bar_sets.append(bar_set)
+
+    def _on_bar_hovered(status, index, bar_set):
+        if status:
+            QToolTip.showText(QCursor.pos(), f"{bar_set.label()}: {bar_set.at(index):,.2f}")
+        else:
+            QToolTip.hideText()
+
+    series.hovered.connect(_on_bar_hovered)
+    chart.addSeries(series)
+
+    axis_x = QBarCategoryAxis()
+    axis_x.append(group_labels)
+    chart.addAxis(axis_x, Qt.AlignBottom)
+    series.attachAxis(axis_x)
+
+    totals = [sum(values) for values in zip(*account_values.values())] if account_values else []
+    axis_y = QValueAxis()
+    y_max = max(totals) if totals else 0.0
+    axis_y.setRange(0.0, y_max if y_max > 0 else 1.0)
     chart.addAxis(axis_y, Qt.AlignLeft)
     series.attachAxis(axis_y)
 

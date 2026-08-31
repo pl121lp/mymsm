@@ -277,6 +277,24 @@ def list_category_spending(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(query).fetchall()
 
 
+def list_recurring_candidate_transactions(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
+    """Every payee-attributed spending transaction, for the recurring/subscriptions report.
+
+    Only negative amounts (money out) are included -- this report detects
+    recurring charges (subscriptions, bills), not recurring income. Transactions
+    with no payee can't be grouped into a recurring series and are excluded.
+    """
+    query = """
+        SELECT p.payee_id, p.name, a.name, t.txn_date, t.amount, a.currency
+        FROM transactions t
+        JOIN accounts a ON a.account_id = t.account_id
+        JOIN payees p ON p.payee_id = t.payee_id
+        WHERE t.amount < 0
+        ORDER BY p.name, t.txn_date
+    """
+    return conn.execute(query).fetchall()
+
+
 def list_payees(conn: duckdb.DuckDBPyConnection) -> list[tuple]:
     return conn.execute(
         "SELECT payee_id, name FROM payees ORDER BY name"

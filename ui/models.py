@@ -1,5 +1,7 @@
 """Qt table models adapting data.py query results for QTableViews."""
 
+import statistics
+from collections import Counter
 from datetime import date
 from decimal import Decimal
 
@@ -8,6 +10,7 @@ from PySide6.QtGui import QColor, QFont
 
 import theme
 from dateutils import add_months
+from payee_merge import find_merge_groups, normalize
 from data import (
     ASSET_ACCOUNT_TYPE,
     BUY_ACTIVITY,
@@ -276,6 +279,262 @@ class IncomeByCategoryTableModel(SpendingByCategoryTableModel):
     COLUMNS = ["Category", "Income (USD)"]
 
 
+# (label, target gap in days, tolerance in days, occurrences per year) for
+# classifying the gaps between a payee's charges into a billing interval.
+# Ranges don't overlap (weekly/biweekly/monthly/quarterly/annual are each
+# well separated), so at most one bucket can match a given median gap.
+_RECURRING_INTERVAL_BUCKETS = [
+    ("Weekly", 7, 2, 52),
+    ("Biweekly", 14, 3, 26),
+    ("Monthly", 30, 5, 12),
+    ("Quarterly", 91, 10, 4),
+    ("Annual", 365, 15, 1),
+]
+
+# A gap is still "consistent" with a bucket if it's close to a small integer
+# multiple of the target -- a bill paid a month late, or one payment that
+# got skipped and caught up next cycle, still reads as the same underlying
+# cadence, not a different one.
+_MAX_SKIPPED_PERIODS = 3
+# At least this fraction of gaps must be consistent, not all of them -- a
+# lone one-off correction/reversal entry a day apart, or a single truly
+# missed payment, shouldn't disqualify an otherwise clearly regular series.
+_INTERVAL_MAJORITY_THRESHOLD = 0.8
+
+
+def _classify_recurring_interval(gaps):
+    """Match a sorted list of day-gaps to a billing interval, or None if irregular."""
+    median_gap = statistics.median(gaps)
+    for label, target, tolerance, periods_per_year in _RECURRING_INTERVAL_BUCKETS:
+        if abs(median_gap - target) > tolerance:
+            continue
+        consistent = sum(
+            1
+            for gap in gaps
+            if any(abs(gap - k * target) <= tolerance for k in range(1, _MAX_SKIPPED_PERIODS + 1))
+        )
+        if consistent / len(gaps) >= _INTERVAL_MAJORITY_THRESHOLD:
+            return label, periods_per_year
+    return None, None
+
+
+# A single payee often represents more than one concurrently-billed amount --
+# a mortgage statement split into principal/escrow/fee/total lines, two
+# different insurance policies paid to the same insurer -- so a payee's
+# transactions are first split into these amount sub-series before checking
+# each for recurrence, rather than being averaged into one meaningless
+# median that would reject all of them. Consecutive *sorted* amounts within
+# this ratio of each other stay in the same sub-series: loose enough to ride
+# out a single price increase (an HOA raising dues 15%) or a mortgage's
+# gradual escrow drift, tight enough to split apart genuinely different
+# bills (a $67 policy vs. a $110 one).
+_AMOUNT_CLUSTER_MAX_STEP_RATIO = Decimal("1.20")
+# Sub-series priced below this are almost always a rounding/balancing split
+# line (e.g. a statement's "$0.01" adjustment), not a real recurring cost.
+_MIN_RECURRING_AMOUNT = Decimal("1.00")
+
+
+def _cluster_rows_by_amount(rows):
+    """Split one payee's (txn_date, amount, currency, account_name) rows into
+    amount sub-series (see _AMOUNT_CLUSTER_MAX_STEP_RATIO)."""
+    ordered = sorted(rows, key=lambda row: abs(row[1]))
+    clusters = []
+    current = []
+    current_amount = None
+    for row in ordered:
+        amount = abs(row[1])
+        if current and amount > current_amount * _AMOUNT_CLUSTER_MAX_STEP_RATIO:
+            clusters.append(current)
+            current = []
+        current.append(row)
+        current_amount = amount
+    if current:
+        clusters.append(current)
+    return clusters
+
+
+def _dedupe_same_day_rows(rows):
+    """Collapse same-day rows in a (date-sorted) amount sub-series to one per
+    day -- e.g. a payment that posts to both a checking account and a linked
+    credit card on the same date is one billing event, not two, and counting
+    it twice would inject a spurious zero-day gap into the interval check."""
+    deduped = []
+    last_date = None
+    for row in rows:
+        if row[0] != last_date:
+            deduped.append(row)
+            last_date = row[0]
+    return deduped
+
+
+# find_merge_groups() buckets by normalized first token before comparing
+# names, which keeps it fast for the vast majority of merchants -- but a
+# bucket bigger than this (a personal Amazon/eBay/etc. order history can
+# easily produce 1000+ distinct payee rows all starting "AMAZON") makes its
+# within-bucket pairwise comparison slow for no benefit: that many wildly
+# different item descriptions aren't one recurring merchant anyway. Payees
+# in an oversized bucket skip fuzzy-merging and just use their own name.
+_MERCHANT_MATCH_MAX_BUCKET_SIZE = 250
+
+
+def _label_payees_by_merchant(payee_names, occurrence_counts):
+    """Map each payee_id to a display label, merging near-duplicate payee
+    records for the same merchant (store-location codes, order/reference
+    numbers, statement noise words like "Advance ") into one label, using
+    the same fuzzy clustering as the Dictionaries > Payees merge-suggestion
+    feature (see payee_merge.find_merge_groups).
+    """
+    bucket_sizes = Counter()
+    first_tokens = {}
+    for payee_id, name in payee_names.items():
+        norm = normalize(name)
+        first_token = norm.split()[0] if norm else None
+        first_tokens[payee_id] = first_token
+        if first_token is not None:
+            bucket_sizes[first_token] += 1
+
+    labels = {}
+    mergeable = {}
+    for payee_id, name in payee_names.items():
+        first_token = first_tokens[payee_id]
+        if first_token is not None and bucket_sizes[first_token] > _MERCHANT_MATCH_MAX_BUCKET_SIZE:
+            labels[payee_id] = name
+        else:
+            mergeable[payee_id] = name
+
+    for group in find_merge_groups(list(mergeable.items()), occurrence_counts):
+        for payee_id, _name, _txn_count in group.members:
+            labels[payee_id] = group.canonical_name
+    for payee_id, name in mergeable.items():
+        labels.setdefault(payee_id, name)
+    return labels
+
+
+def compute_recurring_transactions(transactions, start, end, to_usd, min_occurrences=3):
+    """Detect recurring/subscription-like spending within [start, end], highest
+    estimated monthly cost first.
+
+    `transactions` are (payee_id, payee_name, account_name, txn_date, amount,
+    currency) rows, e.g. from data.list_recurring_candidate_transactions()
+    (amounts already restricted to spending, i.e. negative). Rows are filtered
+    to the date range *before* clustering, both so a merchant's label isn't
+    influenced by charges outside the viewed window and so a narrower window
+    (see reports_tab's default 3-year lookback) means less name-matching work.
+    Payees are then clustered by name similarity (near-duplicate payee records
+    for the same merchant count as one series) and, within each, by amount
+    (see _cluster_rows_by_amount) since one payee can bill several distinct
+    amounts concurrently. Each amount sub-series qualifies on its own when it
+    has at least `min_occurrences` charges (same day = one event, see
+    _dedupe_same_day_rows) whose gaps are all consistent with one detected
+    billing interval (irregular spacing doesn't count, even if the amounts
+    match). The estimated monthly cost is annualized from the *most recent*
+    charge (not an average), so a price increase is reflected immediately;
+    a series priced below _MIN_RECURRING_AMOUNT is dropped as a statement
+    rounding/balancing line rather than a real recurring cost.
+    """
+    in_range = [row for row in transactions if start <= row[3] <= end]
+
+    payee_names = {}
+    occurrence_counts = {}
+    for payee_id, payee_name, _account_name, _txn_date, _amount, _currency in in_range:
+        payee_names.setdefault(payee_id, payee_name)
+        occurrence_counts[payee_id] = occurrence_counts.get(payee_id, 0) + 1
+    payee_labels = _label_payees_by_merchant(payee_names, occurrence_counts)
+
+    by_label = {}
+    for payee_id, _payee_name, account_name, txn_date, amount, currency in in_range:
+        label = payee_labels[payee_id]
+        by_label.setdefault(label, []).append((txn_date, amount, currency, account_name))
+
+    results = []
+    for label, rows in by_label.items():
+        for amount_cluster in _cluster_rows_by_amount(rows):
+            amount_cluster.sort(key=lambda row: row[0])
+            amount_cluster = _dedupe_same_day_rows(amount_cluster)
+            if len(amount_cluster) < min_occurrences:
+                continue
+
+            dates = [txn_date for txn_date, _amount, _currency, _account_name in amount_cluster]
+            gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
+            interval_label, periods_per_year = _classify_recurring_interval(gaps)
+            if interval_label is None:
+                continue
+
+            first_date = dates[0]
+            last_date, last_amount, last_currency, last_account = amount_cluster[-1]
+            last_amount = abs(last_amount)
+            if last_amount < _MIN_RECURRING_AMOUNT:
+                continue
+            monthly_cost = to_usd(last_currency, last_amount) * Decimal(periods_per_year) / Decimal(12)
+            results.append(
+                (label, last_account, interval_label, len(amount_cluster), first_date, last_date, monthly_cost)
+            )
+
+    return sorted(results, key=lambda row: row[6], reverse=True)
+
+
+class RecurringSubscriptionsTableModel(QAbstractTableModel):
+    COLUMNS = [
+        "Payee",
+        "Account",
+        "Interval",
+        "Occurrences",
+        "First Charged",
+        "Last Charged",
+        "Est. Monthly Cost (USD)",
+    ]
+
+    def __init__(self, recurring=None, parent=None):
+        super().__init__(parent)
+        self._recurring = recurring or []
+
+    def set_recurring(self, recurring):
+        self.beginResetModel()
+        self._recurring = recurring
+        self.endResetModel()
+
+    def sort(self, column, order=Qt.AscendingOrder):
+        if not self._recurring:
+            return
+        self.layoutAboutToBeChanged.emit()
+        self._recurring.sort(key=lambda item: item[column], reverse=order == Qt.DescendingOrder)
+        self.layoutChanged.emit()
+
+    def rowCount(self, parent=None):
+        return len(self._recurring)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        (
+            payee_name,
+            account_name,
+            interval_label,
+            occurrences,
+            first_date,
+            last_date,
+            monthly_cost,
+        ) = self._recurring[index.row()]
+        values = [
+            payee_name,
+            account_name,
+            interval_label,
+            str(occurrences),
+            first_date.isoformat(),
+            last_date.isoformat(),
+            format_currency(monthly_cost),
+        ]
+        return values[index.column()]
+
+
 def compute_investment_analysis(prices, start, end):
     """Per-investment price gain within [start, end], highest % increase first.
 
@@ -349,6 +608,48 @@ class InvestmentAnalysisTableModel(QAbstractTableModel):
         return values[index.column()]
 
 
+def _categorize_accounts_for_assets_and_investments(accounts, to_usd):
+    """Split accounts into (investments, assets, loans) lists of (name, value)
+    pairs, each sorted by name. Values are converted to USD; loan balances
+    are stored negative (debt owed) and are negated here to a positive
+    magnitude.
+    """
+    investments = []
+    assets = []
+    loans = []
+    for _account_id, name, account_type, currency, balance, _is_closed, _is_favorite in accounts:
+        usd_value = to_usd(currency, balance)
+        if account_type == INVESTMENT_ACCOUNT_TYPE:
+            investments.append((name, usd_value))
+        elif account_type == ASSET_ACCOUNT_TYPE:
+            assets.append((name, usd_value))
+        elif account_type == LOAN_ACCOUNT_TYPE:
+            loans.append((name, -usd_value))
+
+    investments.sort(key=lambda row: row[0])
+    assets.sort(key=lambda row: row[0])
+    loans.sort(key=lambda row: row[0])
+    return investments, assets, loans
+
+
+def compute_assets_and_investments_breakdown(accounts, to_usd):
+    """Per-account breakdown (USD) for the assets and investments report,
+    grouped into sections for charting.
+
+    accounts is data.list_accounts()-style rows, as in
+    compute_assets_and_investments(). Returns a list of three
+    (section_label, [(account_name, value), ...]) pairs, in the order
+    Investments, Assets, Loans / Liabilities. Loan values are a positive
+    debt magnitude, matching compute_assets_and_investments().
+    """
+    investments, assets, loans = _categorize_accounts_for_assets_and_investments(accounts, to_usd)
+    return [
+        ("Investments", investments),
+        ("Assets", assets),
+        ("Loans / Liabilities", loans),
+    ]
+
+
 def compute_assets_and_investments(accounts, to_usd):
     """Report rows (USD) grouping open accounts into investments, assets,
     and loans/liabilities, each followed by its subtotal, ending with the
@@ -366,21 +667,7 @@ def compute_assets_and_investments(accounts, to_usd):
     their section by appearing in the name/value columns instead. value
     is None for section header rows.
     """
-    investments = []
-    assets = []
-    loans = []
-    for _account_id, name, account_type, currency, balance, _is_closed, _is_favorite in accounts:
-        usd_value = to_usd(currency, balance)
-        if account_type == INVESTMENT_ACCOUNT_TYPE:
-            investments.append((name, usd_value))
-        elif account_type == ASSET_ACCOUNT_TYPE:
-            assets.append((name, usd_value))
-        elif account_type == LOAN_ACCOUNT_TYPE:
-            loans.append((name, -usd_value))
-
-    investments.sort(key=lambda row: row[0])
-    assets.sort(key=lambda row: row[0])
-    loans.sort(key=lambda row: row[0])
+    investments, assets, loans = _categorize_accounts_for_assets_and_investments(accounts, to_usd)
 
     investment_total = sum((value for _name, value in investments), start=Decimal("0"))
     asset_total = sum((value for _name, value in assets), start=Decimal("0"))
