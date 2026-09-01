@@ -3,7 +3,7 @@ assumptions rather than real transaction data (contrast with
 models.compute_net_worth_series, which is historical).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
 from typing import NamedTuple, Optional
@@ -33,6 +33,7 @@ class ProjectionInputs:
     medical_cost_after_retirement: Decimal
     medicare_age: int
     withdrawal_tax_rate: Decimal
+    extra_annual_cash_flows: dict[int, Decimal] = field(default_factory=dict)
 
 
 class YearlyProjection(NamedTuple):
@@ -74,6 +75,12 @@ def compute_projection(
     by withdrawal_tax_rate so the after-tax proceeds cover the shortfall.
     This does not apply before retirement, and does not apply to house-sale
     or inheritance lump sums, which are added in full in their given year.
+
+    extra_annual_cash_flows optionally maps a year to an additional cash
+    flow added to that year's net_cash_flow before compounding -- callers
+    use this to fold in e.g. RSU vesting proceeds or a college-tuition
+    fund's contributions/withdrawals without this module needing to know
+    about either.
     """
     if current_year is None:
         current_year = date.today().year
@@ -134,6 +141,7 @@ def compute_projection(
             net_cash_flow += inputs.house_sale_value
         if year == inputs.inheritance_year:
             net_cash_flow += inputs.inheritance_amount
+        net_cash_flow += inputs.extra_annual_cash_flows.get(year, zero)
 
         return_rate = (
             inputs.return_rate_after_retirement if retired else inputs.return_rate_before_retirement

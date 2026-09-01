@@ -8,6 +8,7 @@ from datetime import date
 
 from PySide6.QtCore import Signal
 from PySide6.QtWidgets import (
+    QCheckBox,
     QComboBox,
     QFormLayout,
     QLabel,
@@ -44,6 +45,10 @@ def default_projection_values(today=None):
         "medical_cost_after_retirement": 0.0,
         "medicare_age": 65,
         "withdrawal_tax_rate": 15.0,
+        "include_rsu_vesting": True,
+        "include_college_tuition": True,
+        "include_house_sale": True,
+        "include_inheritance": True,
     }
 
 
@@ -93,6 +98,15 @@ class ProjectionControlsPanel(QWidget):
         self.inheritance_amount_spinbox = dollar_spinbox(defaults["inheritance_amount"])
         self.inheritance_year_spinbox = year_spinbox(defaults["inheritance_year"])
 
+        self.include_rsu_vesting_checkbox = QCheckBox("Include RSU Vesting Forecast")
+        self.include_rsu_vesting_checkbox.setChecked(defaults["include_rsu_vesting"])
+        self.include_college_tuition_checkbox = QCheckBox("Include College Tuition Projection")
+        self.include_college_tuition_checkbox.setChecked(defaults["include_college_tuition"])
+        self.include_house_sale_checkbox = QCheckBox("Include House Sale")
+        self.include_house_sale_checkbox.setChecked(defaults["include_house_sale"])
+        self.include_inheritance_checkbox = QCheckBox("Include Inheritance")
+        self.include_inheritance_checkbox.setChecked(defaults["include_inheritance"])
+
         self.update_button = QPushButton("Update")
         self.update_button.clicked.connect(self.updated.emit)
 
@@ -134,6 +148,11 @@ class ProjectionControlsPanel(QWidget):
         inheritance_form.addRow("Inheritance amount (one-time):", self.inheritance_amount_spinbox)
         inheritance_form.addRow("Inheritance year:", self.inheritance_year_spinbox)
 
+        layout.addWidget(QLabel("<b>Include</b>"))
+        layout.addWidget(self.include_rsu_vesting_checkbox)
+        layout.addWidget(self.include_college_tuition_checkbox)
+        layout.addWidget(self.include_house_sale_checkbox)
+        layout.addWidget(self.include_inheritance_checkbox)
         layout.addWidget(QLabel("<b>Timeline</b>"))
         layout.addLayout(timeline_form)
         layout.addWidget(QLabel("<b>Investment Returns</b>"))
@@ -187,6 +206,10 @@ class ProjectionControlsPanel(QWidget):
             "house_sale_year": self.house_sale_year_spinbox.value(),
             "inheritance_amount": self.inheritance_amount_spinbox.value(),
             "inheritance_year": self.inheritance_year_spinbox.value(),
+            "include_rsu_vesting": self.include_rsu_vesting_checkbox.isChecked(),
+            "include_college_tuition": self.include_college_tuition_checkbox.isChecked(),
+            "include_house_sale": self.include_house_sale_checkbox.isChecked(),
+            "include_inheritance": self.include_inheritance_checkbox.isChecked(),
         }
 
     def set_values(self, values):
@@ -223,3 +246,11 @@ class ProjectionControlsPanel(QWidget):
         if "house_account_id" in values:
             index = self.house_account_combo.findData(values["house_account_id"])
             self.house_account_combo.setCurrentIndex(index if index >= 0 else 0)
+        if "include_rsu_vesting" in values:
+            self.include_rsu_vesting_checkbox.setChecked(bool(values["include_rsu_vesting"]))
+        if "include_college_tuition" in values:
+            self.include_college_tuition_checkbox.setChecked(bool(values["include_college_tuition"]))
+        if "include_house_sale" in values:
+            self.include_house_sale_checkbox.setChecked(bool(values["include_house_sale"]))
+        if "include_inheritance" in values:
+            self.include_inheritance_checkbox.setChecked(bool(values["include_inheritance"]))

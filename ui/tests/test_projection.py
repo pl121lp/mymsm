@@ -311,3 +311,33 @@ def test_house_sale_is_not_grossed_up_by_withdrawal_tax():
 
     assert row.net_cash_flow == Decimal("1000")
     assert row.net_worth == Decimal("6000")
+
+
+def test_extra_annual_cash_flows_default_to_empty_and_do_not_affect_projection():
+    inputs = _inputs(
+        birth_year=2000,
+        end_year=2026,
+        retirement_age=100,
+        starting_investment_value=Decimal("1000"),
+    )
+
+    rows = compute_projection(inputs, current_year=2024)
+
+    assert all(row.net_worth == Decimal("1000") for row in rows)
+
+
+def test_extra_annual_cash_flows_are_added_in_their_configured_year_only():
+    inputs = _inputs(
+        birth_year=2000,
+        end_year=2027,
+        retirement_age=100,
+        extra_annual_cash_flows={2025: Decimal("3000"), 2026: Decimal("-1000")},
+    )
+
+    rows = compute_projection(inputs, current_year=2024)
+    by_year = {row.year: row for row in rows}
+
+    assert by_year[2024].net_worth == Decimal("0")
+    assert by_year[2025].net_worth == Decimal("3000")
+    assert by_year[2026].net_worth == Decimal("2000")
+    assert by_year[2027].net_worth == Decimal("2000")

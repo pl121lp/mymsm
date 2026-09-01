@@ -1135,6 +1135,81 @@ def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
     assert assets_series.at(1).y() == pytest.approx(0.0)
 
 
+def test_unchecking_include_house_sale_keeps_house_in_assets_and_out_of_cash_flow(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.house_account_combo.setCurrentIndex(1)
+    controls.house_sale_year_spinbox.setValue(date.today().year + 1)
+    controls.include_house_sale_checkbox.setChecked(False)
+    controls.update_button.click()
+
+    assets_series = pane.chart_view.chart().series()[0].upperSeries()
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert assets_series.at(1).y() == pytest.approx(assets_series.at(0).y())
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y())
+
+
+def test_inheritance_adds_lump_sum_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.inheritance_amount_spinbox.setValue(5000.0)
+    controls.inheritance_year_spinbox.setValue(date.today().year + 1)
+    controls.update_button.click()
+
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y() + 5000.0)
+
+
+def test_unchecking_include_inheritance_excludes_it_from_projected_cash_flow(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.inheritance_amount_spinbox.setValue(5000.0)
+    controls.inheritance_year_spinbox.setValue(date.today().year + 1)
+    controls.include_inheritance_checkbox.setChecked(False)
+    controls.update_button.click()
+
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y())
+
+
 def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
@@ -1156,6 +1231,152 @@ def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_co
 
     investments_series = pane.chart_view.chart().series()[1].upperSeries()
     assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y() + 1000.0)
+
+
+def test_rsu_vesting_forecast_adds_after_tax_vest_value_to_projected_cash_flow(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    next_year = date.today().year + 1
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        f"(3500, 3, NULL, NULL, '{next_year}-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.tax_rate_spinbox.setValue(0.0)
+    controls.inflation_rate_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.update_button.click()
+
+    # Brokerage A / security 500's latest known price is 22.63 (the
+    # 2024-03-01 sell); 5 shares at that price, taxed at the default 35%,
+    # nets 113.15 * 0.65 = 73.5475.
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y() + 73.5475)
+
+
+def test_unchecking_include_rsu_vesting_excludes_it_from_projected_cash_flow(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    next_year = date.today().year + 1
+    dict_conn.execute(
+        "INSERT INTO transactions VALUES "
+        f"(3500, 3, NULL, NULL, '{next_year}-06-15', 0.00, NULL, 500, '18', 5.0, NULL, NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.tax_rate_spinbox.setValue(0.0)
+    controls.inflation_rate_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.include_rsu_vesting_checkbox.setChecked(False)
+    controls.update_button.click()
+
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y())
+
+
+def test_college_tuition_projection_reduces_projected_cash_flow_when_tuition_is_paid(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    tuition_year = date.today().year + 1
+    monkeypatch.setattr(
+        reports_tab,
+        "load_college_tuition_settings",
+        lambda: {
+            "selected_account_ids": [3],
+            "annual_return_rate": 0.0,
+            "contribution_per_quarter": 0.0,
+            "contribution_end_year": date.today().year,
+            "person1_start_year": tuition_year,
+            "person1_end_year": tuition_year,
+            "person1_tuition_per_quarter": 1000.0,
+            "person1_housing_per_quarter": 0.0,
+            "person2_start_year": date.today().year,
+            "person2_end_year": date.today().year - 1,
+            "person2_tuition_per_quarter": 0.0,
+            "person2_housing_per_quarter": 0.0,
+        },
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.tax_rate_spinbox.setValue(0.0)
+    controls.inflation_rate_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.update_button.click()
+
+    # $1000/quarter tuition for all 4 quarters of tuition_year = $4000.
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y() - 4000.0)
+
+
+def test_unchecking_include_college_tuition_excludes_it_from_projected_cash_flow(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    tuition_year = date.today().year + 1
+    monkeypatch.setattr(
+        reports_tab,
+        "load_college_tuition_settings",
+        lambda: {
+            "selected_account_ids": [3],
+            "annual_return_rate": 0.0,
+            "contribution_per_quarter": 0.0,
+            "contribution_end_year": date.today().year,
+            "person1_start_year": tuition_year,
+            "person1_end_year": tuition_year,
+            "person1_tuition_per_quarter": 1000.0,
+            "person1_housing_per_quarter": 0.0,
+            "person2_start_year": date.today().year,
+            "person2_end_year": date.today().year - 1,
+            "person2_tuition_per_quarter": 0.0,
+            "person2_housing_per_quarter": 0.0,
+        },
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.tax_rate_spinbox.setValue(0.0)
+    controls.inflation_rate_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.include_college_tuition_checkbox.setChecked(False)
+    controls.update_button.click()
+
+    investments_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert investments_series.at(1).y() == pytest.approx(investments_series.at(0).y())
 
 
 def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):

@@ -28,6 +28,10 @@ def test_default_projection_values_are_relative_to_today():
         "medical_cost_after_retirement": 0.0,
         "medicare_age": 65,
         "withdrawal_tax_rate": 15.0,
+        "include_rsu_vesting": True,
+        "include_college_tuition": True,
+        "include_house_sale": True,
+        "include_inheritance": True,
     }
 
 
@@ -55,6 +59,10 @@ def test_panel_initializes_widgets_from_defaults(qapp):
     assert panel.medical_cost_spinbox.value() == pytest.approx(0.0)
     assert panel.medicare_age_spinbox.value() == 65
     assert panel.withdrawal_tax_rate_spinbox.value() == pytest.approx(15.0)
+    assert panel.include_rsu_vesting_checkbox.isChecked() is True
+    assert panel.include_college_tuition_checkbox.isChecked() is True
+    assert panel.include_house_sale_checkbox.isChecked() is True
+    assert panel.include_inheritance_checkbox.isChecked() is True
 
 
 def test_starting_investment_value_spinbox_is_not_editable(qapp):
@@ -143,6 +151,28 @@ def test_set_values_updates_only_the_given_keys(qapp):
 
     assert panel.retirement_age_spinbox.value() == 62
     assert panel.end_year_spinbox.value() == 2064
+
+
+def test_values_and_set_values_round_trip_include_checkboxes(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+
+    panel.set_values(
+        {
+            "include_rsu_vesting": False,
+            "include_college_tuition": False,
+            "include_house_sale": False,
+            "include_inheritance": False,
+        }
+    )
+
+    assert panel.values()["include_rsu_vesting"] is False
+    assert panel.values()["include_college_tuition"] is False
+    assert panel.values()["include_house_sale"] is False
+    assert panel.values()["include_inheritance"] is False
+    assert panel.include_rsu_vesting_checkbox.isChecked() is False
+    assert panel.include_college_tuition_checkbox.isChecked() is False
+    assert panel.include_house_sale_checkbox.isChecked() is False
+    assert panel.include_inheritance_checkbox.isChecked() is False
 
 
 def test_clicking_update_button_emits_updated_signal(qapp):

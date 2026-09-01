@@ -842,12 +842,94 @@ class ReportsPane(QWidget):
         )
         self._render_projection_chart()
 
+    def _add_rsu_vesting_cash_flows(self, extra_annual_cash_flows):
+        """Adds each upcoming vest's after-tax USD value into
+        extra_annual_cash_flows under its vest year, using the same tax
+        rate as the RSU Vesting Forecast report. Vests with no known
+        security price are skipped (their value is unknown, not zero)."""
+        try:
+            vests = data.list_upcoming_vests(self._conn)
+        except Exception:
+            return
+        tax_settings = load_rsu_tax_settings()
+        tax_rate = Decimal(str(tax_settings.get("tax_rate", RSU_DEFAULT_TAX_RATE))) / Decimal("100")
+        for _account_name, _security_name, vest_date, quantity, price, currency in vests:
+            if price is None:
+                continue
+            value = self._to_usd(currency, quantity * price)
+            net_value = value * (Decimal("1") - tax_rate)
+            extra_annual_cash_flows[vest_date.year] = (
+                extra_annual_cash_flows.get(vest_date.year, Decimal("0")) + net_value
+            )
+
+    def _add_college_tuition_cash_flows(self, extra_annual_cash_flows):
+        """Adds each year's net college-tuition cash flow (contributions
+        minus tuition/housing costs, from the College Tuition Projection
+        report's own settings) into extra_annual_cash_flows -- since the
+        college fund's balance is already counted inside the main
+        starting_investment_value total, this is what actually drags it
+        down as tuition gets paid instead of letting it compound untouched."""
+        try:
+            accounts = data.list_accounts(self._conn, include_closed=False)
+        except Exception:
+            return
+        investment_balances = {
+            account_id: self._to_usd(currency, balance)
+            for account_id, _name, account_type, currency, balance, _is_closed, _is_favorite
+            in accounts
+            if account_type == INVESTMENT_ACCOUNT_TYPE
+        }
+        settings = load_college_tuition_settings()
+        selected_account_ids = settings.get("selected_account_ids")
+        if selected_account_ids is None:
+            starting_fund_value = sum(investment_balances.values(), start=Decimal("0"))
+        else:
+            starting_fund_value = sum(
+                (investment_balances.get(account_id, Decimal("0")) for account_id in selected_account_ids),
+                start=Decimal("0"),
+            )
+        values = default_college_tuition_values()
+        values.update(settings)
+        hundred = Decimal("100")
+        inputs = CollegeTuitionInputs(
+            starting_fund_value=starting_fund_value,
+            annual_return_rate=Decimal(str(values["annual_return_rate"])) / hundred,
+            contribution_per_quarter=Decimal(str(values["contribution_per_quarter"])),
+            contribution_end_year=values["contribution_end_year"],
+            person1=PersonCollegeCosts(
+                start_year=values["person1_start_year"],
+                end_year=values["person1_end_year"],
+                tuition_per_quarter=Decimal(str(values["person1_tuition_per_quarter"])),
+                housing_per_quarter=Decimal(str(values["person1_housing_per_quarter"])),
+            ),
+            person2=PersonCollegeCosts(
+                start_year=values["person2_start_year"],
+                end_year=values["person2_end_year"],
+                tuition_per_quarter=Decimal(str(values["person2_tuition_per_quarter"])),
+                housing_per_quarter=Decimal(str(values["person2_housing_per_quarter"])),
+            ),
+        )
+        for row in compute_college_tuition_projection(inputs):
+            extra_annual_cash_flows[row.year] = (
+                extra_annual_cash_flows.get(row.year, Decimal("0")) + row.net_cash_flow
+            )
+
     def _render_projection_chart(self):
         values = self.projection_controls.values()
         hundred = Decimal("100")
         house_sale_value = self._projection_asset_values.get(
             values["house_account_id"], Decimal("0")
         )
+        if not values.get("include_house_sale", True):
+            house_sale_value = Decimal("0")
+        inheritance_amount = Decimal(str(values["inheritance_amount"]))
+        if not values.get("include_inheritance", True):
+            inheritance_amount = Decimal("0")
+        extra_annual_cash_flows = {}
+        if values.get("include_rsu_vesting", True):
+            self._add_rsu_vesting_cash_flows(extra_annual_cash_flows)
+        if values.get("include_college_tuition", True):
+            self._add_college_tuition_cash_flows(extra_annual_cash_flows)
         inputs = ProjectionInputs(
             birth_year=values["birth_year"],
             end_year=values["end_year"],
@@ -866,11 +948,12 @@ class ReportsPane(QWidget):
             social_security_start_year_2=values["social_security_start_year_2"],
             house_sale_value=house_sale_value,
             house_sale_year=values["house_sale_year"],
-            inheritance_amount=Decimal(str(values["inheritance_amount"])),
+            inheritance_amount=inheritance_amount,
             inheritance_year=values["inheritance_year"],
             medical_cost_after_retirement=Decimal(str(values["medical_cost_after_retirement"])),
             medicare_age=values["medicare_age"],
             withdrawal_tax_rate=Decimal(str(values["withdrawal_tax_rate"])) / hundred,
+            extra_annual_cash_flows=extra_annual_cash_flows,
         )
         rows = compute_projection(inputs)
         assets_total = sum(self._projection_asset_values.values(), start=Decimal("0"))
