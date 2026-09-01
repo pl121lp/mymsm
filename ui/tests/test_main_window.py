@@ -744,6 +744,16 @@ def test_value_checkbox_checked_shows_chart_page(qapp, conn):
     assert window.content_stack.currentWidget() is window.value_chart_view
 
 
+def test_value_chart_extends_y_axis_to_zero(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+
+    window.value_checkbox.setChecked(True)
+
+    axis_y = window.value_chart_view.chart().axes(Qt.Vertical)[0]
+    assert axis_y.min() == 0.0
+
+
 def test_value_checkbox_unchecked_shows_transaction_table(qapp, conn):
     window = MainWindow(conn)
     window.account_view.selectRow(1)

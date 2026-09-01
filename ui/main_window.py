@@ -368,7 +368,7 @@ class MainWindow(QMainWindow):
         usd_history = [
             (txn_date, self.account_model.to_usd(currency, value)) for txn_date, value in history
         ]
-        chart = build_line_chart(f"{name} — Value (USD)", [(name, usd_history)])
+        chart = build_line_chart(f"{name} — Value (USD)", [(name, usd_history)], mark_zero=True)
         self.value_chart_view.setChart(chart)
         self.content_stack.setCurrentIndex(VALUE_PAGE)
 
