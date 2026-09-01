@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPointF
 
 import charts
 from charts import (
@@ -133,6 +133,18 @@ def test_build_line_chart_mark_zero_adds_a_hidden_zero_reference_series(qapp):
     assert markers and markers[0].isVisible() is False
 
 
+def test_build_line_chart_hover_shows_series_label_date_and_value(qapp, monkeypatch):
+    shown = []
+    monkeypatch.setattr(charts.QToolTip, "showText", lambda pos, text: shown.append(text))
+
+    chart = build_line_chart("Title", [("Series", _points())])
+    line_series = chart.series()[0]
+    first_point = line_series.points()[0]
+
+    line_series.hovered.emit(QPointF(first_point.x(), first_point.y()), True)
+    assert shown == ["Series\n2024-01-01: 100.00"]
+
+
 def _bands():
     bottom = [(date(2024, 1, 1), Decimal("100")), (date(2024, 2, 1), Decimal("100"))]
     top = [(date(2024, 1, 1), Decimal("50")), (date(2024, 2, 1), Decimal("150"))]
@@ -162,3 +174,17 @@ def test_build_stacked_area_chart_mark_zero_extends_range_to_include_zero(qapp):
 
     axis_y = chart.axes(Qt.Vertical)[0]
     assert axis_y.max() == 0.0
+
+
+def test_build_stacked_area_chart_hover_shows_band_own_value_not_cumulative(qapp, monkeypatch):
+    shown = []
+    monkeypatch.setattr(charts.QToolTip, "showText", lambda pos, text: shown.append(text))
+
+    chart = build_stacked_area_chart("Title", _bands())
+    top_series = chart.series()[1]
+    first_upper_point = top_series.upperSeries().points()[0]
+
+    # y is the cumulative boundary value (150); the hover handler should look up
+    # the band's own contribution (50) by date rather than using this y.
+    top_series.hovered.emit(QPointF(first_upper_point.x(), first_upper_point.y()), True)
+    assert shown == ["Top\n2024-01-01: 50.00"]

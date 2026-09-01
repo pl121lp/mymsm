@@ -27,6 +27,8 @@ def build_line_chart(title, series, mark_zero=False):
     extended to include 0 and a dashed reference line is drawn at y=0 (kept
     out of the legend) so a chart that can go negative always shows where
     zero is -- used for the net worth projection, which can dip negative.
+    Hovering near a point shows its series label, date, and value in a
+    tooltip.
     """
     chart = QChart()
     chart.setTheme(theme.chart_theme())
@@ -58,6 +60,15 @@ def build_line_chart(title, series, mark_zero=False):
         chart.addSeries(line_series)
         line_series.attachAxis(axis_x)
         line_series.attachAxis(axis_y)
+
+        def _on_line_hovered(point, state, _label=label):
+            if state:
+                date_str = QDateTime.fromMSecsSinceEpoch(round(point.x())).toString("yyyy-MM-dd")
+                QToolTip.showText(QCursor.pos(), f"{_label}\n{date_str}: {point.y():,.2f}")
+            else:
+                QToolTip.hideText()
+
+        line_series.hovered.connect(_on_line_hovered)
 
     if x_min is not None:
         if mark_zero:
@@ -95,7 +106,8 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
     area between the running total below it and the running total
     including it, so the top edge of the last band traces the combined
     total. color is any string QColor accepts (e.g. a "#rrggbb" hex).
-    mark_zero behaves as in build_line_chart.
+    mark_zero behaves as in build_line_chart. Hovering near a band shows
+    its label, date, and own (non-cumulative) value in a tooltip.
     """
     chart = QChart()
     chart.setTheme(theme.chart_theme())
@@ -118,6 +130,8 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
     for label, points, color in bands:
         lower_series = QLineSeries()
         upper_series = QLineSeries()
+        band_x_ms = []
+        band_values = []
         for index, (point_date, value) in enumerate(points):
             qdt = QDateTime(point_date.year, point_date.month, point_date.day, 0, 0, 0)
             x_ms = qdt.toMSecsSinceEpoch()
@@ -125,6 +139,8 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
             upper_y = lower_y + float(value)
             lower_series.append(x_ms, lower_y)
             upper_series.append(x_ms, upper_y)
+            band_x_ms.append(x_ms)
+            band_values.append(float(value))
             x_min = x_ms if x_min is None else min(x_min, x_ms)
             x_max = x_ms if x_max is None else max(x_max, x_ms)
             y_min = min(lower_y, upper_y) if y_min is None else min(y_min, lower_y, upper_y)
@@ -140,6 +156,21 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
         boundary_series.extend([lower_series, upper_series])
 
         running_total = [upper_series.at(i).y() for i in range(upper_series.count())]
+
+        def _on_area_hovered(point, state, _label=label, _x_ms=band_x_ms, _values=band_values):
+            if not state:
+                QToolTip.hideText()
+                return
+            if not _x_ms:
+                return
+            # QAreaSeries.hovered reports a point on the cumulative boundary,
+            # not the band's own value, so look up the closest date's actual
+            # (non-cumulative) contribution ourselves.
+            closest = min(range(len(_x_ms)), key=lambda i: abs(_x_ms[i] - point.x()))
+            date_str = QDateTime.fromMSecsSinceEpoch(_x_ms[closest]).toString("yyyy-MM-dd")
+            QToolTip.showText(QCursor.pos(), f"{_label}\n{date_str}: {_values[closest]:,.2f}")
+
+        area.hovered.connect(_on_area_hovered)
 
     if x_min is not None:
         if mark_zero:
