@@ -1023,10 +1023,23 @@ class TransactionTableModel(QAbstractTableModel):
             return
         field_index = self._field_indexes[column]
         self.layoutAboutToBeChanged.emit()
+        old_persistent_indexes = self.persistentIndexList()
+        # Transaction rows aren't reused or copied by sorting, so the row
+        # object's identity (not its transaction id, which loan interest
+        # rows share as None) reliably tracks each row to its new position.
+        old_rows = [self._transactions[index.row()] for index in old_persistent_indexes]
+
         known = [row for row in self._transactions if row[field_index] is not None]
         unknown = [row for row in self._transactions if row[field_index] is None]
         known.sort(key=lambda row: row[field_index], reverse=(order == Qt.DescendingOrder))
         self._transactions = known + unknown
+
+        new_row_by_identity = {id(row): new_row for new_row, row in enumerate(self._transactions)}
+        new_persistent_indexes = [
+            self.index(new_row_by_identity[id(row)], index.column())
+            for row, index in zip(old_rows, old_persistent_indexes)
+        ]
+        self.changePersistentIndexList(old_persistent_indexes, new_persistent_indexes)
         self.layoutChanged.emit()
 
     def rowCount(self, parent=None):

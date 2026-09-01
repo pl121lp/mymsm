@@ -147,6 +147,9 @@ class MainWindow(QMainWindow):
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
         self.transaction_view.setSortingEnabled(True)
         self.transaction_view.doubleClicked.connect(self._on_transaction_double_clicked)
+        self.transaction_view.horizontalHeader().sortIndicatorChanged.connect(
+            self._on_transaction_view_sorted
+        )
         enable_cell_copy(
             self.transaction_view,
             on_edit=self._edit_transaction,
@@ -590,6 +593,11 @@ class MainWindow(QMainWindow):
 
     def _on_transaction_double_clicked(self, index):
         self._edit_transaction(index.row())
+
+    def _on_transaction_view_sorted(self, _column, _order):
+        current = self.transaction_view.selectionModel().currentIndex()
+        if current.isValid():
+            self.transaction_view.scrollTo(current, QAbstractItemView.PositionAtCenter)
 
     def _edit_transaction(self, row):
         indexes = self.account_view.selectionModel().selectedRows()

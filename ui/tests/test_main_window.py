@@ -2,9 +2,9 @@ from datetime import date
 from decimal import Decimal
 
 import pytest
-from PySide6.QtCore import QEvent, QPointF, Qt
+from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, Qt
 from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QDialog, QMessageBox, QPushButton
+from PySide6.QtWidgets import QAbstractItemView, QDialog, QMessageBox, QPushButton, QTableView
 
 import app_settings
 import theme
@@ -810,6 +810,36 @@ def test_transaction_double_click_opens_edit_dialog_for_clicked_transaction(qapp
 
     assert len(seen_transactions) == 1
     assert seen_transactions[0] == window.transaction_model.transaction_at(0)
+
+
+def test_sorting_transaction_table_recenters_the_still_selected_transaction(qapp, conn, monkeypatch):
+    scrolled = []
+    monkeypatch.setattr(
+        QTableView,
+        "scrollTo",
+        lambda self, index, hint=QAbstractItemView.EnsureVisible: scrolled.append((index, hint)),
+    )
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (see conn fixture ordering)
+    # Checking has transactions 1000 (-52.30) and 1001 (+1000.00); select 1000.
+    row = next(
+        r
+        for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[0] == 1000
+    )
+    window.transaction_view.selectionModel().setCurrentIndex(
+        window.transaction_model.index(row, 0),
+        QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows,
+    )
+    scrolled.clear()  # drop any scrollTo triggered by the selection above
+
+    window.transaction_view.horizontalHeader().sortIndicatorChanged.emit(4, Qt.DescendingOrder)
+
+    assert len(scrolled) == 1
+    index, hint = scrolled[0]
+    assert hint == QAbstractItemView.PositionAtCenter
+    assert window.transaction_model.transaction_at(index.row())[0] == 1000
 
 
 def test_transaction_edit_reloads_and_shows_status_on_accept(qapp, conn, monkeypatch):

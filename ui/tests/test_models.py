@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QModelIndex, QPersistentModelIndex
 
 import models
 import theme
@@ -310,6 +310,38 @@ def test_sort_investment_transactions_by_quantity():
     model.set_transactions(rows, is_investment=True)
     model.sort(3, Qt.AscendingOrder)
     assert [_data(model, r, 3) for r in range(2)] == ["1.0000", "5.0000"]
+
+
+def test_sort_moves_persistent_index_along_with_its_row():
+    rows = [
+        (1, date(2024, 1, 1), "Store A", "Groceries", "m1", Decimal("50.00"), None, None, None, None),
+        (2, date(2024, 1, 2), "Store B", "Dining", "m2", Decimal("-20.00"), None, None, None, None),
+        (3, date(2024, 1, 3), "Store C", "Rent", "m3", Decimal("10.00"), None, None, None, None),
+    ]
+    model = TransactionTableModel(rows)
+    persistent = QPersistentModelIndex(model.index(0, 1))  # "Store A", row 0
+
+    model.sort(4, Qt.AscendingOrder)  # by amount: -20, 10, 50 -> Store B, Store C, Store A
+
+    assert persistent.row() == 2
+    assert model.data(QModelIndex(persistent), Qt.DisplayRole) == "Store A"
+
+
+def test_sort_moves_persistent_index_for_rows_sharing_a_none_transaction_id():
+    interest_a = (
+        None, date(2024, 1, 15), "NFCU", None, "A", Decimal("10.00"), None, None, None, None, "Interest",
+    )
+    interest_b = (
+        None, date(2024, 2, 15), "NFCU", None, "B", Decimal("20.00"), None, None, None, None, "Interest",
+    )
+    model = TransactionTableModel()
+    model.set_transactions([interest_a, interest_b], is_loan=True)
+    persistent = QPersistentModelIndex(model.index(1, 3))  # memo "B", row 1
+
+    model.sort(3, Qt.DescendingOrder)  # by memo: "B", "A"
+
+    assert persistent.row() == 0
+    assert model.data(QModelIndex(persistent), Qt.DisplayRole) == "B"
 
 
 LOAN_PRINCIPAL_ROW = (
