@@ -1508,6 +1508,44 @@ def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
     assert window.statusBar().currentMessage() == "Undone: Import 2 record(s)"
 
 
+def test_ctrl_z_keeps_the_previously_selected_account_selected(qapp, conn):
+    class _NoOpCommand:
+        description = "No-op"
+
+        def undo(self, conn):
+            pass
+
+    window = MainWindow(conn)
+    checking_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[0] == 1
+    )
+    window.account_view.selectRow(checking_row)
+    window._undo_stack.push(_NoOpCommand())
+
+    window._on_undo()
+
+    indexes = window.account_view.selectionModel().selectedRows()
+    assert indexes
+    assert window.account_model.account_at(indexes[0].row())[0] == 1
+    assert window.transaction_model.rowCount() > 0
+
+
+def test_ctrl_z_with_no_account_selected_does_not_select_one(qapp, conn):
+    class _NoOpCommand:
+        description = "No-op"
+
+        def undo(self, conn):
+            pass
+
+    window = MainWindow(conn)
+    window._undo_stack.push(_NoOpCommand())
+
+    window._on_undo()
+
+    assert window.account_view.selectionModel().selectedRows() == []
+
+
 def test_ctrl_z_shows_failure_message_and_drops_failed_command(qapp, conn):
     class _FailingCommand:
         description = "Fail"

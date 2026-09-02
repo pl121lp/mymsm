@@ -455,12 +455,17 @@ class MainWindow(QMainWindow):
         if command is None:
             self.statusBar().showMessage("Nothing to undo.")
             return
+        selected_rows = self.account_view.selectionModel().selectedRows()
+        account_id = self.account_model.account_at(selected_rows[0].row())[0] if selected_rows else None
         try:
             command.undo(self._conn)
         except Exception as exc:
             self.statusBar().showMessage(f"Failed to undo: {exc}")
             return
         self._refresh_after_write()
+        if account_id is not None:
+            self._select_account_row(account_id)
+            self._on_account_selected()
         self.statusBar().showMessage(f"Undone: {command.description}")
 
     def _on_add_record_button_clicked(self):
