@@ -15,6 +15,7 @@ from writes import (
     import_transactions,
     restore_transaction,
     restore_transaction_fields,
+    restore_transactions,
     set_account_closed,
     set_account_favorite,
     set_account_qfx_id,
@@ -373,6 +374,40 @@ def test_delete_transactions_leaves_other_rows_intact(conn):
 def test_delete_transactions_does_nothing_for_empty_list(conn):
     before_count = len(data.list_transactions(conn, account_id=1))
     delete_transactions(conn, [])
+    assert len(data.list_transactions(conn, account_id=1)) == before_count
+
+
+def test_restore_transactions_reinserts_all_deleted_rows_with_same_ids(conn):
+    rows = [
+        data.get_transaction_row(conn, transaction_id=1000),
+        data.get_transaction_row(conn, transaction_id=1001),
+    ]
+    delete_transactions(conn, [1000, 1001])
+
+    restore_transactions(conn, rows)
+
+    restored = [
+        data.get_transaction_row(conn, transaction_id=1000),
+        data.get_transaction_row(conn, transaction_id=1001),
+    ]
+    assert restored == rows
+
+
+def test_restore_transactions_leaves_other_rows_intact(conn):
+    rows = [data.get_transaction_row(conn, transaction_id=1000)]
+    delete_transaction(conn, transaction_id=1000)
+
+    restore_transactions(conn, rows)
+
+    other = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id = 1001"
+    ).fetchone()
+    assert other == (1001,)
+
+
+def test_restore_transactions_does_nothing_for_empty_list(conn):
+    before_count = len(data.list_transactions(conn, account_id=1))
+    restore_transactions(conn, [])
     assert len(data.list_transactions(conn, account_id=1)) == before_count
 
 

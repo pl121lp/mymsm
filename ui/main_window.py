@@ -57,7 +57,15 @@ from qfx_import import parse_account_id, parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
-from undo import AddCommand, AddGrantCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
+from undo import (
+    AddCommand,
+    AddGrantCommand,
+    DeleteCommand,
+    DeleteRecordsCommand,
+    EditCommand,
+    ImportCommand,
+    UndoStack,
+)
 
 SETTINGS_KEY_SEK_RATE = "sek_to_usd_rate"
 SETTINGS_KEY_DARK_MODE = "dark_mode"
@@ -146,6 +154,7 @@ class MainWindow(QMainWindow):
 
         self.transaction_view = QTableView()
         self.transaction_view.setModel(self.transaction_model)
+        self.transaction_view.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.transaction_view.horizontalHeader().setStretchLastSection(True)
         self.transaction_view.setSortingEnabled(True)
         self.transaction_view.doubleClicked.connect(self._on_transaction_double_clicked)
@@ -640,6 +649,19 @@ class MainWindow(QMainWindow):
     def _transaction_context_actions(self, row):
         if self.transaction_model.transaction_at(row)[0] is None:
             return []
+        selected_rows = {index.row() for index in self.transaction_view.selectionModel().selectedRows()}
+        # A right-click outside the current selection acts on just that row,
+        # matching Qt's own selection-collapsing behavior on such a click.
+        if row not in selected_rows:
+            selected_rows = {row}
+        # Synthetic loan-interest rows (transaction_id is None) aren't real
+        # records and can't be deleted; drop them from a multi-selection.
+        selected_rows = sorted(
+            r for r in selected_rows if self.transaction_model.transaction_at(r)[0] is not None
+        )
+        if len(selected_rows) > 1:
+            label = f"Delete {len(selected_rows)} Records"
+            return [(label, partial(self._on_delete_records_clicked, selected_rows))]
         return [("Delete Record", partial(self._on_delete_record_clicked, row))]
 
     def _on_delete_record_clicked(self, row):
@@ -664,6 +686,29 @@ class MainWindow(QMainWindow):
         self.account_view.selectRow(account_row)
         self._on_account_selected()
         self.statusBar().showMessage("Record deleted.")
+
+    def _on_delete_records_clicked(self, rows):
+        indexes = self.account_view.selectionModel().selectedRows()
+        if not indexes:
+            return
+        account_row = indexes[0].row()
+        transaction_ids = [self.transaction_model.transaction_at(r)[0] for r in rows]
+        reply = QMessageBox.question(
+            self,
+            "Delete Records",
+            f"Permanently delete {len(transaction_ids)} records? Press Ctrl+Z afterward to undo.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        before_rows = [data.get_transaction_row(self._conn, tid) for tid in transaction_ids]
+        writes.delete_transactions(self._conn, transaction_ids)
+        self._undo_stack.push(DeleteRecordsCommand(before_rows))
+        self._refresh_after_write()
+        self.account_view.selectRow(account_row)
+        self._on_account_selected()
+        self.statusBar().showMessage(f"{len(transaction_ids)} records deleted.")
 
     def closeEvent(self, event):
         backup.backup_on_exit(self._conn)

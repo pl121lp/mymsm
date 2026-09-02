@@ -1064,6 +1064,86 @@ def test_delete_record_removes_record_and_reloads_on_confirm(qapp, conn, monkeyp
     assert window.statusBar().currentMessage() == "Record deleted."
 
 
+def _select_transaction_rows(window, rows):
+    selection_model = window.transaction_view.selectionModel()
+    selection_model.select(
+        window.transaction_model.index(rows[0], 0),
+        QItemSelectionModel.ClearAndSelect | QItemSelectionModel.Rows,
+    )
+    for row in rows[1:]:
+        selection_model.select(
+            window.transaction_model.index(row, 0),
+            QItemSelectionModel.Select | QItemSelectionModel.Rows,
+        )
+
+
+def test_transaction_context_actions_offer_bulk_delete_when_multiple_rows_selected(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking, has transactions 1000 and 1001
+    _select_transaction_rows(window, [0, 1])
+
+    labels = [label for label, _callback in window._transaction_context_actions(0)]
+
+    assert labels == ["Delete 2 Records"]
+
+
+def test_transaction_context_actions_fall_back_to_single_row_outside_selection(qapp, conn):
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+    _select_transaction_rows(window, [0])
+
+    # Right-clicking row 1, which isn't part of the current selection, acts
+    # on just that row rather than the stale selection.
+    labels = [label for label, _callback in window._transaction_context_actions(1)]
+
+    assert labels == ["Delete Record"]
+
+
+def test_delete_records_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.No)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+
+    window._on_delete_records_clicked([0, 1])
+
+    rows = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id IN (1000, 1001)"
+    ).fetchall()
+    assert len(rows) == 2
+
+
+def test_delete_records_removes_all_and_reloads_on_confirm(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+
+    window._on_delete_records_clicked([0, 1])
+
+    rows = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id IN (1000, 1001)"
+    ).fetchall()
+    assert rows == []
+    assert window.statusBar().currentMessage() == "2 records deleted."
+
+
+def test_ctrl_z_undoes_a_bulk_delete(qapp, conn, monkeypatch):
+    monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)
+
+    window._on_delete_records_clicked([0, 1])
+    window._on_undo()
+
+    rows = conn.execute(
+        "SELECT transaction_id FROM transactions WHERE transaction_id IN (1000, 1001)"
+    ).fetchall()
+    assert {row[0] for row in rows} == {1000, 1001}
+    assert window.statusBar().currentMessage() == "Undone: Delete 2 record(s)"
+
+
 def test_loan_account_header_shows_principal_and_interest_totals(qapp, loan_conn):
     window = MainWindow(loan_conn)
     window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
@@ -1130,6 +1210,26 @@ def test_loan_interest_row_context_actions_offer_no_delete(qapp, loan_conn):
     )
 
     assert window._transaction_context_actions(interest_row) == []
+
+
+def test_loan_interest_rows_excluded_from_bulk_delete_selection(qapp, loan_conn):
+    window = MainWindow(loan_conn)
+    window.account_view.selectRow(2)  # row 2 = Car Loan (see loan_conn fixture ordering)
+    principal_rows = [
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[10] == "Principal"
+    ][:2]
+    interest_row = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[10] == "Interest"
+    )
+    _select_transaction_rows(window, principal_rows + [interest_row])
+
+    labels_and_callbacks = window._transaction_context_actions(principal_rows[0])
+
+    assert [label for label, _callback in labels_and_callbacks] == ["Delete 2 Records"]
+    _label, callback = labels_and_callbacks[0]
+    assert callback.args[0] == sorted(principal_rows)
 
 
 def test_loan_principal_row_double_click_still_opens_edit_dialog(qapp, loan_conn, monkeypatch):

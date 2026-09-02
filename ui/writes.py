@@ -137,6 +137,25 @@ def delete_transactions(conn, transaction_ids):
     conn.commit()
 
 
+def restore_transactions(conn, rows):
+    """Re-inserts multiple previously-deleted transaction rows exactly as
+    captured by data.get_transaction_row, in one transaction — all-or-
+    nothing, like delete_transactions. Used only to undo a multi-record
+    delete — see ui/undo.py."""
+    if not rows:
+        return
+    conn.begin()
+    try:
+        for row in rows:
+            conn.execute(
+                "INSERT INTO transactions VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", list(row)
+            )
+    except Exception:
+        conn.rollback()
+        raise
+    conn.commit()
+
+
 def add_transaction(
     conn,
     account_id,

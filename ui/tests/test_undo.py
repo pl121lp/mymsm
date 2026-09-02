@@ -5,7 +5,15 @@ from decimal import Decimal
 
 import data
 import writes
-from undo import AddCommand, AddGrantCommand, DeleteCommand, EditCommand, ImportCommand, UndoStack
+from undo import (
+    AddCommand,
+    AddGrantCommand,
+    DeleteCommand,
+    DeleteRecordsCommand,
+    EditCommand,
+    ImportCommand,
+    UndoStack,
+)
 
 
 def test_undo_stack_pop_on_empty_returns_none():
@@ -132,6 +140,28 @@ def test_add_grant_command_undo_removes_all_grant_and_vest_rows(conn):
 def test_add_grant_command_description_mentions_the_count():
     command = AddGrantCommand([3004, 3005, 3006, 3007])
     assert command.description == "Add grant (4 record(s))"
+
+
+def test_delete_records_command_undo_restores_all_deleted_rows(conn):
+    before_rows = [
+        data.get_transaction_row(conn, transaction_id=1000),
+        data.get_transaction_row(conn, transaction_id=1001),
+    ]
+    writes.delete_transactions(conn, [1000, 1001])
+    command = DeleteRecordsCommand(before_rows)
+
+    command.undo(conn)
+
+    restored = [
+        data.get_transaction_row(conn, transaction_id=1000),
+        data.get_transaction_row(conn, transaction_id=1001),
+    ]
+    assert restored == before_rows
+
+
+def test_delete_records_command_description_mentions_the_count():
+    command = DeleteRecordsCommand([("row1",), ("row2",), ("row3",)])
+    assert command.description == "Delete 3 record(s)"
 
 
 def test_edit_then_delete_then_undo_twice_restores_original_row(conn):

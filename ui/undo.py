@@ -76,3 +76,12 @@ class AddGrantCommand:
 
     def undo(self, conn):
         writes.delete_transactions(conn, self.transaction_ids)
+
+
+class DeleteRecordsCommand:
+    def __init__(self, rows):
+        self._rows = rows
+        self.description = f"Delete {len(rows)} record(s)"
+
+    def undo(self, conn):
+        writes.restore_transactions(conn, self._rows)
