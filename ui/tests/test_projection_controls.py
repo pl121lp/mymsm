@@ -183,3 +183,117 @@ def test_clicking_update_button_emits_updated_signal(qapp):
     panel.update_button.click()
 
     assert calls == [True]
+
+
+def test_panel_starts_with_a_single_default_profile(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+
+    assert [panel.profile_combo.itemText(i) for i in range(panel.profile_combo.count())] == ["Default"]
+    assert panel.profile_combo.currentText() == "Default"
+    assert panel.profile_name_edit.text() == "Default"
+
+
+def test_set_profile_names_populates_combo_and_selects_active(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+
+    panel.set_profile_names(["Default", "Retire Early"], "Retire Early")
+
+    assert [panel.profile_combo.itemText(i) for i in range(panel.profile_combo.count())] == [
+        "Default",
+        "Retire Early",
+    ]
+    assert panel.profile_combo.currentText() == "Retire Early"
+    assert panel.profile_name_edit.text() == "Retire Early"
+
+
+def test_selecting_a_different_profile_emits_profile_selected(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    panel.set_profile_names(["Default", "Retire Early"], "Default")
+    calls = []
+    panel.profile_selected.connect(calls.append)
+
+    panel.profile_combo.setCurrentText("Retire Early")
+
+    assert calls == ["Retire Early"]
+    assert panel.profile_name_edit.text() == "Retire Early"
+
+
+def test_editing_profile_name_field_emits_profile_renamed(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    calls = []
+    panel.profile_renamed.connect(lambda old, new: calls.append((old, new)))
+
+    panel.profile_name_edit.setText("My Plan")
+    panel.profile_name_edit.editingFinished.emit()
+
+    assert calls == [("Default", "My Plan")]
+    assert panel.profile_combo.currentText() == "My Plan"
+
+
+def test_renaming_profile_to_blank_is_ignored(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    calls = []
+    panel.profile_renamed.connect(lambda old, new: calls.append((old, new)))
+
+    panel.profile_name_edit.setText("")
+    panel.profile_name_edit.editingFinished.emit()
+
+    assert calls == []
+    assert panel.profile_combo.currentText() == "Default"
+    assert panel.profile_name_edit.text() == "Default"
+
+
+def test_renaming_profile_to_existing_name_is_ignored(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    panel.set_profile_names(["Default", "Retire Early"], "Default")
+    calls = []
+    panel.profile_renamed.connect(lambda old, new: calls.append((old, new)))
+
+    panel.profile_name_edit.setText("Retire Early")
+    panel.profile_name_edit.editingFinished.emit()
+
+    assert calls == []
+    assert panel.profile_combo.currentText() == "Default"
+    assert panel.profile_name_edit.text() == "Default"
+
+
+def test_add_profile_button_prompts_for_name_and_emits_profile_added(qapp, monkeypatch):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    monkeypatch.setattr(
+        "projection_controls.QInputDialog.getText", lambda *a, **k: ("Retire Early", True)
+    )
+    calls = []
+    panel.profile_added.connect(calls.append)
+
+    panel.add_profile_button.click()
+
+    assert calls == ["Retire Early"]
+    assert [panel.profile_combo.itemText(i) for i in range(panel.profile_combo.count())] == [
+        "Default",
+        "Retire Early",
+    ]
+    assert panel.profile_combo.currentText() == "Retire Early"
+
+
+def test_add_profile_button_does_nothing_if_dialog_is_cancelled(qapp, monkeypatch):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    monkeypatch.setattr("projection_controls.QInputDialog.getText", lambda *a, **k: ("", False))
+    calls = []
+    panel.profile_added.connect(calls.append)
+
+    panel.add_profile_button.click()
+
+    assert calls == []
+    assert panel.profile_combo.count() == 1
+
+
+def test_add_profile_button_ignores_duplicate_name(qapp, monkeypatch):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    monkeypatch.setattr("projection_controls.QInputDialog.getText", lambda *a, **k: ("Default", True))
+    calls = []
+    panel.profile_added.connect(calls.append)
+
+    panel.add_profile_button.click()
+
+    assert calls == []
+    assert panel.profile_combo.count() == 1

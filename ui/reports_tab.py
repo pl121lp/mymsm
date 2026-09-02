@@ -64,7 +64,11 @@ import theme
 from form_controls import percent_spinbox
 from projection import ProjectionInputs, compute_projection
 from projection_controls import ProjectionControlsPanel, default_projection_values
-from projection_settings import load_projection_settings, save_projection_settings
+from projection_settings import (
+    DEFAULT_PROFILE_NAME,
+    load_projection_profiles,
+    save_projection_profiles,
+)
 from rsu_tax_settings import load_rsu_tax_settings, save_rsu_tax_settings
 from table_copy import enable_cell_copy
 
@@ -131,6 +135,8 @@ class ReportsPane(QWidget):
         self._investment_prices = []
         self._selected_investments = None
         self._projection_asset_values = {}
+        self._projection_profiles = {}
+        self._active_projection_profile = DEFAULT_PROFILE_NAME
         self._assets_investments_breakdown = []
         self._recurring_transactions = []
         self._recurring_worker = None
@@ -184,6 +190,9 @@ class ReportsPane(QWidget):
 
         self.projection_controls = ProjectionControlsPanel()
         self.projection_controls.updated.connect(self._on_projection_updated)
+        self.projection_controls.profile_selected.connect(self._on_projection_profile_selected)
+        self.projection_controls.profile_renamed.connect(self._on_projection_profile_renamed)
+        self.projection_controls.profile_added.connect(self._on_projection_profile_added)
 
         # Wrapped in a scroll area so the (tall) controls panel scrolls
         # internally instead of pushing the chart down; Ignored vertical size
@@ -829,18 +838,60 @@ class ReportsPane(QWidget):
         }
         self.projection_controls.set_house_accounts(asset_accounts)
 
+        active_profile, profiles = load_projection_profiles()
+        if not profiles:
+            profiles = {DEFAULT_PROFILE_NAME: {}}
+            active_profile = DEFAULT_PROFILE_NAME
+        elif active_profile not in profiles:
+            active_profile = next(iter(profiles))
+        self._projection_profiles = profiles
+        self._active_projection_profile = active_profile
+        self.projection_controls.set_profile_names(list(profiles.keys()), active_profile)
+
         values = default_projection_values()
-        values.update(load_projection_settings())
+        values.update(profiles[active_profile])
         values["starting_investment_value"] = float(starting_value)
         self.projection_controls.set_values(values)
         self._render_projection_chart()
 
-    def _on_projection_updated(self):
+    def _current_projection_profile_values(self):
         values = self.projection_controls.values()
-        save_projection_settings(
-            {key: value for key, value in values.items() if key != "starting_investment_value"}
-        )
+        return {key: value for key, value in values.items() if key != "starting_investment_value"}
+
+    def _save_current_projection_profile(self):
+        self._projection_profiles[self._active_projection_profile] = self._current_projection_profile_values()
+        save_projection_profiles(self._projection_profiles, self._active_projection_profile)
+
+    def _on_projection_updated(self):
+        self._save_current_projection_profile()
         self._render_projection_chart()
+
+    def _on_projection_profile_selected(self, name):
+        if name == self._active_projection_profile:
+            return
+        starting_investment_value = self.projection_controls.values()["starting_investment_value"]
+        self._save_current_projection_profile()
+        self._active_projection_profile = name
+        values = default_projection_values()
+        values.update(self._projection_profiles.get(name, {}))
+        values["starting_investment_value"] = starting_investment_value
+        self.projection_controls.set_values(values)
+        save_projection_profiles(self._projection_profiles, self._active_projection_profile)
+        self._render_projection_chart()
+
+    def _on_projection_profile_renamed(self, old_name, new_name):
+        self._projection_profiles[new_name] = self._projection_profiles.pop(
+            old_name, self._current_projection_profile_values()
+        )
+        if self._active_projection_profile == old_name:
+            self._active_projection_profile = new_name
+        save_projection_profiles(self._projection_profiles, self._active_projection_profile)
+
+    def _on_projection_profile_added(self, name):
+        self._save_current_projection_profile()
+        self._projection_profiles[name] = dict(self._projection_profiles[self._active_projection_profile])
+        self._active_projection_profile = name
+        save_projection_profiles(self._projection_profiles, self._active_projection_profile)
 
     def _add_rsu_vesting_cash_flows(self, extra_annual_cash_flows):
         """Adds each upcoming vest's after-tax USD value into

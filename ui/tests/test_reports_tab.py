@@ -12,8 +12,9 @@ from college_tuition_settings import (
     save_college_tuition_settings as _real_save_college_tuition_settings,
 )
 from projection_settings import (
-    load_projection_settings as _real_load_projection_settings,
-    save_projection_settings as _real_save_projection_settings,
+    DEFAULT_PROFILE_NAME,
+    load_projection_profiles as _real_load_projection_profiles,
+    save_projection_profiles as _real_save_projection_profiles,
 )
 from reports_tab import REPORTS, ReportsPane
 from rsu_tax_settings import load_rsu_tax_settings, save_rsu_tax_settings
@@ -1013,7 +1014,7 @@ def test_selecting_other_report_after_projection_restores_range_controls(qapp, d
 
 
 def test_selecting_projection_report_autofills_starting_investment_value(qapp, dict_conn, monkeypatch):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
     _select_projection_report(pane)
@@ -1023,7 +1024,9 @@ def test_selecting_projection_report_autofills_starting_investment_value(qapp, d
 
 def test_selecting_projection_report_loads_persisted_settings(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(
-        reports_tab, "load_projection_settings", lambda: {"retirement_age": 70, "annual_income": 12345.0}
+        reports_tab,
+        "load_projection_profiles",
+        lambda: (DEFAULT_PROFILE_NAME, {DEFAULT_PROFILE_NAME: {"retirement_age": 70, "annual_income": 12345.0}}),
     )
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
@@ -1036,7 +1039,7 @@ def test_selecting_projection_report_loads_persisted_settings(qapp, dict_conn, m
 def test_selecting_projection_report_renders_stacked_assets_and_investments_bands(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
 
     _select_projection_report(pane)
@@ -1055,7 +1058,7 @@ def test_selecting_projection_report_renders_stacked_assets_and_investments_band
 def test_selecting_projection_report_includes_asset_accounts_in_the_starting_total(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
@@ -1071,7 +1074,7 @@ def test_selecting_projection_report_includes_asset_accounts_in_the_starting_tot
 
 
 def test_selecting_projection_report_populates_house_account_choices(qapp, dict_conn, monkeypatch):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
@@ -1087,7 +1090,7 @@ def test_selecting_projection_report_populates_house_account_choices(qapp, dict_
 def test_selling_the_house_moves_its_value_from_assets_to_investments_without_double_counting(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
@@ -1117,7 +1120,7 @@ def test_selling_the_house_moves_its_value_from_assets_to_investments_without_do
 def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
@@ -1138,7 +1141,7 @@ def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
 def test_unchecking_include_house_sale_keeps_house_in_assets_and_out_of_cash_flow(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     dict_conn.execute(
         "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
@@ -1166,7 +1169,7 @@ def test_unchecking_include_house_sale_keeps_house_in_assets_and_out_of_cash_flo
 
 
 def test_inheritance_adds_lump_sum_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
@@ -1189,7 +1192,7 @@ def test_inheritance_adds_lump_sum_to_projected_cash_flow(qapp, dict_conn, monke
 def test_unchecking_include_inheritance_excludes_it_from_projected_cash_flow(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
@@ -1211,7 +1214,7 @@ def test_unchecking_include_inheritance_excludes_it_from_projected_cash_flow(
 
 
 def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_conn, monkeypatch):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
@@ -1236,7 +1239,7 @@ def test_second_social_security_person_adds_to_projected_cash_flow(qapp, dict_co
 def test_rsu_vesting_forecast_adds_after_tax_vest_value_to_projected_cash_flow(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     next_year = date.today().year + 1
     dict_conn.execute(
         "INSERT INTO transactions VALUES "
@@ -1267,7 +1270,7 @@ def test_rsu_vesting_forecast_adds_after_tax_vest_value_to_projected_cash_flow(
 def test_unchecking_include_rsu_vesting_excludes_it_from_projected_cash_flow(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     next_year = date.today().year + 1
     dict_conn.execute(
         "INSERT INTO transactions VALUES "
@@ -1296,7 +1299,7 @@ def test_unchecking_include_rsu_vesting_excludes_it_from_projected_cash_flow(
 def test_college_tuition_projection_reduces_projected_cash_flow_when_tuition_is_paid(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     tuition_year = date.today().year + 1
     monkeypatch.setattr(
         reports_tab,
@@ -1339,7 +1342,7 @@ def test_college_tuition_projection_reduces_projected_cash_flow_when_tuition_is_
 def test_unchecking_include_college_tuition_excludes_it_from_projected_cash_flow(
     qapp, dict_conn, monkeypatch
 ):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     tuition_year = date.today().year + 1
     monkeypatch.setattr(
         reports_tab,
@@ -1380,17 +1383,23 @@ def test_unchecking_include_college_tuition_excludes_it_from_projected_cash_flow
 
 
 def test_clicking_update_in_projection_panel_saves_settings_and_rerenders(qapp, dict_conn, monkeypatch):
-    monkeypatch.setattr(reports_tab, "load_projection_settings", lambda: {})
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     saved = {}
-    monkeypatch.setattr(reports_tab, "save_projection_settings", saved.update)
+
+    def fake_save(profiles, active_profile):
+        saved["profiles"] = profiles
+        saved["active_profile"] = active_profile
+
+    monkeypatch.setattr(reports_tab, "save_projection_profiles", fake_save)
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     _select_projection_report(pane)
 
     pane.projection_controls.retirement_age_spinbox.setValue(70)
     pane.projection_controls.update_button.click()
 
-    assert saved["retirement_age"] == 70
-    assert "starting_investment_value" not in saved
+    assert saved["active_profile"] == DEFAULT_PROFILE_NAME
+    assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 70
+    assert "starting_investment_value" not in saved["profiles"][DEFAULT_PROFILE_NAME]
 
 
 def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatch, tmp_path):
@@ -1400,12 +1409,12 @@ def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatc
         "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
     )
     monkeypatch.setattr(
-        reports_tab, "load_projection_settings",
-        functools.partial(_real_load_projection_settings, path=settings_path),
+        reports_tab, "load_projection_profiles",
+        functools.partial(_real_load_projection_profiles, path=settings_path),
     )
     monkeypatch.setattr(
-        reports_tab, "save_projection_settings",
-        functools.partial(_real_save_projection_settings, path=settings_path),
+        reports_tab, "save_projection_profiles",
+        functools.partial(_real_save_projection_profiles, path=settings_path),
     )
 
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
@@ -1416,13 +1425,80 @@ def test_persisted_settings_round_trip_through_panel(qapp, dict_conn, monkeypatc
 
     pane2 = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     monkeypatch.setattr(
-        reports_tab, "load_projection_settings",
-        functools.partial(_real_load_projection_settings, path=settings_path),
+        reports_tab, "load_projection_profiles",
+        functools.partial(_real_load_projection_profiles, path=settings_path),
     )
     _select_projection_report(pane2)
 
     assert pane2.projection_controls.retirement_age_spinbox.value() == 70
     assert pane2.projection_controls.house_account_combo.currentData() == 5
+
+
+def test_switching_projection_profile_saves_current_and_loads_selected(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab,
+        "load_projection_profiles",
+        lambda: (
+            DEFAULT_PROFILE_NAME,
+            {DEFAULT_PROFILE_NAME: {}, "Retire Early": {"retirement_age": 50}},
+        ),
+    )
+    saved = {}
+    monkeypatch.setattr(
+        reports_tab,
+        "save_projection_profiles",
+        lambda profiles, active_profile: saved.update(profiles=profiles, active_profile=active_profile),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+    pane.projection_controls.retirement_age_spinbox.setValue(80)
+
+    pane.projection_controls.profile_combo.setCurrentText("Retire Early")
+
+    assert pane.projection_controls.retirement_age_spinbox.value() == 50
+    assert saved["active_profile"] == "Retire Early"
+    assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 80
+
+
+def test_renaming_projection_profile_persists_the_new_name(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    saved = {}
+    monkeypatch.setattr(
+        reports_tab,
+        "save_projection_profiles",
+        lambda profiles, active_profile: saved.update(profiles=profiles, active_profile=active_profile),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    pane.projection_controls.profile_name_edit.setText("My Plan")
+    pane.projection_controls.profile_name_edit.editingFinished.emit()
+
+    assert saved["active_profile"] == "My Plan"
+    assert "My Plan" in saved["profiles"]
+    assert DEFAULT_PROFILE_NAME not in saved["profiles"]
+
+
+def test_adding_projection_profile_seeds_from_current_and_switches(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    monkeypatch.setattr("projection_controls.QInputDialog.getText", lambda *a, **k: ("Retire Early", True))
+    saved = {}
+    monkeypatch.setattr(
+        reports_tab,
+        "save_projection_profiles",
+        lambda profiles, active_profile: saved.update(profiles=profiles, active_profile=active_profile),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+    pane.projection_controls.retirement_age_spinbox.setValue(58)
+
+    pane.projection_controls.add_profile_button.click()
+
+    assert pane.projection_controls.profile_combo.currentText() == "Retire Early"
+    assert pane.projection_controls.retirement_age_spinbox.value() == 58
+    assert saved["active_profile"] == "Retire Early"
+    assert saved["profiles"]["Retire Early"]["retirement_age"] == 58
+    assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 58
 
 
 def test_reports_list_shows_college_tuition_projection_report(qapp, dict_conn):

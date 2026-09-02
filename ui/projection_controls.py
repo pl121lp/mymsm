@@ -11,7 +11,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
     QFormLayout,
+    QHBoxLayout,
+    QInputDialog,
     QLabel,
+    QLineEdit,
     QPushButton,
     QSpinBox,
     QVBoxLayout,
@@ -19,6 +22,7 @@ from PySide6.QtWidgets import (
 )
 
 from form_controls import dollar_spinbox, percent_spinbox, year_spinbox
+from projection_settings import DEFAULT_PROFILE_NAME
 
 
 def default_projection_values(today=None):
@@ -54,10 +58,24 @@ def default_projection_values(today=None):
 
 class ProjectionControlsPanel(QWidget):
     updated = Signal()
+    profile_selected = Signal(str)
+    profile_renamed = Signal(str, str)
+    profile_added = Signal(str)
 
     def __init__(self, parent=None, today=None):
         super().__init__(parent)
         defaults = default_projection_values(today)
+
+        self.profile_combo = QComboBox()
+        self.profile_combo.addItem(DEFAULT_PROFILE_NAME)
+        self.profile_combo.currentTextChanged.connect(self._on_profile_combo_changed)
+
+        self.profile_name_edit = QLineEdit(DEFAULT_PROFILE_NAME)
+        self.profile_name_edit.editingFinished.connect(self._on_profile_name_edited)
+
+        self.add_profile_button = QPushButton("+")
+        self.add_profile_button.setToolTip("Add a new profile")
+        self.add_profile_button.clicked.connect(self._on_add_profile_clicked)
 
         self.birth_year_spinbox = year_spinbox(defaults["birth_year"])
         self.end_year_spinbox = year_spinbox(defaults["end_year"])
@@ -111,6 +129,13 @@ class ProjectionControlsPanel(QWidget):
         self.update_button.clicked.connect(self.updated.emit)
 
         layout = QVBoxLayout(self)
+
+        profile_row = QHBoxLayout()
+        profile_row.addWidget(QLabel("Profile:"))
+        profile_row.addWidget(self.profile_combo)
+        profile_row.addWidget(self.profile_name_edit)
+        profile_row.addWidget(self.add_profile_button)
+        layout.addLayout(profile_row)
 
         timeline_form = QFormLayout()
         timeline_form.addRow("Birth year:", self.birth_year_spinbox)
@@ -169,6 +194,56 @@ class ProjectionControlsPanel(QWidget):
         layout.addLayout(inheritance_form)
         layout.addWidget(self.update_button)
         layout.addStretch()
+
+    def set_profile_names(self, names, active):
+        """names: iterable of profile name strings. active: the one to select."""
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.clear()
+        self.profile_combo.addItems(names)
+        index = self.profile_combo.findText(active)
+        self.profile_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.profile_combo.blockSignals(False)
+        self.profile_name_edit.setText(self.profile_combo.currentText())
+
+    def add_profile_name(self, name):
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.addItem(name)
+        self.profile_combo.setCurrentText(name)
+        self.profile_combo.blockSignals(False)
+        self.profile_name_edit.setText(name)
+
+    def _on_profile_combo_changed(self, name):
+        if not name:
+            return
+        self.profile_name_edit.setText(name)
+        self.profile_selected.emit(name)
+
+    def _on_profile_name_edited(self):
+        old_name = self.profile_combo.currentText()
+        new_name = self.profile_name_edit.text().strip()
+        if not new_name or new_name == old_name:
+            self.profile_name_edit.setText(old_name)
+            return
+        existing_names = [self.profile_combo.itemText(i) for i in range(self.profile_combo.count())]
+        if new_name in existing_names:
+            self.profile_name_edit.setText(old_name)
+            return
+        index = self.profile_combo.currentIndex()
+        self.profile_combo.blockSignals(True)
+        self.profile_combo.setItemText(index, new_name)
+        self.profile_combo.blockSignals(False)
+        self.profile_renamed.emit(old_name, new_name)
+
+    def _on_add_profile_clicked(self):
+        name, ok = QInputDialog.getText(self, "New Profile", "Profile name:")
+        name = name.strip()
+        if not ok or not name:
+            return
+        existing_names = [self.profile_combo.itemText(i) for i in range(self.profile_combo.count())]
+        if name in existing_names:
+            return
+        self.add_profile_name(name)
+        self.profile_added.emit(name)
 
     def set_house_accounts(self, accounts):
         """accounts: iterable of (account_id, name) pairs for Asset-type accounts."""
