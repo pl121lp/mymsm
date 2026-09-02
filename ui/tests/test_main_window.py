@@ -1084,7 +1084,7 @@ def test_transaction_context_actions_offer_bulk_delete_when_multiple_rows_select
 
     labels = [label for label, _callback in window._transaction_context_actions(0)]
 
-    assert labels == ["Delete 2 Records"]
+    assert labels == ["Summarize", "Delete 2 Records"]
 
 
 def test_transaction_context_actions_fall_back_to_single_row_outside_selection(qapp, conn):
@@ -1097,6 +1097,30 @@ def test_transaction_context_actions_fall_back_to_single_row_outside_selection(q
     labels = [label for label, _callback in window._transaction_context_actions(1)]
 
     assert labels == ["Delete Record"]
+
+
+def test_summarize_clicked_opens_dialog_with_selected_transactions(qapp, conn, monkeypatch):
+    import summarize_dialog
+
+    captured = {}
+    original_init = summarize_dialog.SummarizeDialog.__init__
+
+    def spy_init(self, transactions, parent=None):
+        captured["transactions"] = transactions
+        original_init(self, transactions, parent=parent)
+
+    monkeypatch.setattr(summarize_dialog.SummarizeDialog, "__init__", spy_init)
+    monkeypatch.setattr(summarize_dialog.SummarizeDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking, has transactions 1000 and 1001
+
+    window._on_summarize_clicked([0, 1])
+
+    assert [t[0] for t in captured["transactions"]] == [
+        window.transaction_model.transaction_at(0)[0],
+        window.transaction_model.transaction_at(1)[0],
+    ]
 
 
 def test_delete_records_does_nothing_when_not_confirmed(qapp, conn, monkeypatch):
@@ -1227,8 +1251,8 @@ def test_loan_interest_rows_excluded_from_bulk_delete_selection(qapp, loan_conn)
 
     labels_and_callbacks = window._transaction_context_actions(principal_rows[0])
 
-    assert [label for label, _callback in labels_and_callbacks] == ["Delete 2 Records"]
-    _label, callback = labels_and_callbacks[0]
+    assert [label for label, _callback in labels_and_callbacks] == ["Summarize", "Delete 2 Records"]
+    _label, callback = labels_and_callbacks[1]
     assert callback.args[0] == sorted(principal_rows)
 
 

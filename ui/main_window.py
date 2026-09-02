@@ -56,6 +56,7 @@ from navigation_history import NavigationHistory
 from qfx_import import parse_account_id, parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
+from summarize_dialog import SummarizeDialog
 from table_copy import enable_cell_copy, enable_label_copy
 from undo import (
     AddCommand,
@@ -660,9 +661,17 @@ class MainWindow(QMainWindow):
             r for r in selected_rows if self.transaction_model.transaction_at(r)[0] is not None
         )
         if len(selected_rows) > 1:
-            label = f"Delete {len(selected_rows)} Records"
-            return [(label, partial(self._on_delete_records_clicked, selected_rows))]
+            delete_label = f"Delete {len(selected_rows)} Records"
+            return [
+                ("Summarize", partial(self._on_summarize_clicked, selected_rows)),
+                (delete_label, partial(self._on_delete_records_clicked, selected_rows)),
+            ]
         return [("Delete Record", partial(self._on_delete_record_clicked, row))]
+
+    def _on_summarize_clicked(self, rows):
+        transactions = [self.transaction_model.transaction_at(r) for r in rows]
+        dialog = SummarizeDialog(transactions, parent=self)
+        dialog.exec()
 
     def _on_delete_record_clicked(self, row):
         indexes = self.account_view.selectionModel().selectedRows()
