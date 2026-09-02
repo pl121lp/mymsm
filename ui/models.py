@@ -24,6 +24,9 @@ from data import (
 FAVORITE_BACKGROUND_LIGHT = QColor(225, 225, 225)
 FAVORITE_BACKGROUND_DARK = QColor(70, 70, 70)
 
+IMPORTED_BACKGROUND_LIGHT = QColor(200, 255, 200)
+IMPORTED_BACKGROUND_DARK = QColor(40, 90, 40)
+
 ACCOUNT_TYPE_LABELS = {
     "0": "Checking/Savings",
     "1": "Credit",
@@ -986,17 +989,19 @@ class TransactionTableModel(QAbstractTableModel):
     INVESTMENT_FIELD_INDEXES = [1, 6, 7, 8, 9, 5, 4]
     LOAN_FIELD_INDEXES = [1, 2, 10, 4, 5]
 
-    def __init__(self, transactions=None, parent=None, is_investment=False, is_loan=False):
+    def __init__(self, transactions=None, parent=None, is_investment=False, is_loan=False, highlighted_ids=None):
         super().__init__(parent)
         self._transactions = transactions or []
         self._is_investment = is_investment
         self._is_loan = is_loan
+        self._highlighted_ids = set(highlighted_ids or ())
 
-    def set_transactions(self, transactions, is_investment=False, is_loan=False):
+    def set_transactions(self, transactions, is_investment=False, is_loan=False, highlighted_ids=None):
         self.beginResetModel()
         self._transactions = transactions
         self._is_investment = is_investment
         self._is_loan = is_loan
+        self._highlighted_ids = set(highlighted_ids or ())
         self.endResetModel()
 
     def transaction_at(self, row):
@@ -1054,6 +1059,11 @@ class TransactionTableModel(QAbstractTableModel):
         return None
 
     def data(self, index, role=Qt.DisplayRole):
+        if role == Qt.BackgroundRole:
+            transaction_id = self._transactions[index.row()][0]
+            if transaction_id in self._highlighted_ids:
+                return IMPORTED_BACKGROUND_DARK if theme.is_dark() else IMPORTED_BACKGROUND_LIGHT
+            return None
         if role != Qt.DisplayRole:
             return None
         row = self._transactions[index.row()]

@@ -86,6 +86,8 @@ class MainWindow(QMainWindow):
         self._current_view = None
         self._navigating_back = False
         self._undo_stack = UndoStack()
+        self._highlighted_account_id = None
+        self._highlighted_transaction_ids = set()
         QShortcut(QKeySequence("Ctrl+Z"), self, activated=self._on_undo)
         QApplication.instance().installEventFilter(self)
 
@@ -530,7 +532,11 @@ class MainWindow(QMainWindow):
             return
         if dialog.imported_transaction_ids:
             self._undo_stack.push(ImportCommand(dialog.imported_transaction_ids))
+        self._highlighted_account_id = dialog.imported_account_id
+        self._highlighted_transaction_ids = set(dialog.imported_transaction_ids)
         self._refresh_after_write()
+        self._select_account_row(dialog.imported_account_id)
+        self._on_account_selected()
         self.statusBar().showMessage(f"Imported {dialog.imported_count} transaction(s).")
 
     def _on_toggle_closed_button_clicked(self, row):
@@ -722,6 +728,9 @@ class MainWindow(QMainWindow):
         account_id, name, account_type, currency, balance, _, _ = self.account_model.account_at(
             indexes[0].row()
         )
+        if account_id != self._highlighted_account_id:
+            self._highlighted_account_id = None
+            self._highlighted_transaction_ids = set()
         is_investment = account_type == INVESTMENT_ACCOUNT_TYPE
         is_loan = account_type == LOAN_ACCOUNT_TYPE
         self.add_grant_button.setEnabled(is_investment)
@@ -766,14 +775,18 @@ class MainWindow(QMainWindow):
                 f"Total Interest Paid: {format_currency(usd_interest)} USD — "
                 f"{len(display_rows)} record(s)"
             )
-            self.transaction_model.set_transactions(display_rows, is_loan=True)
+            self.transaction_model.set_transactions(
+                display_rows, is_loan=True, highlighted_ids=self._highlighted_transaction_ids
+            )
         else:
             self.account_details_label.setText(
                 f"{name} ({account_type_label(account_type)}) — "
                 f"{balance_label}: {format_currency(usd_balance)} USD — "
                 f"{len(transactions)} record(s)"
             )
-            self.transaction_model.set_transactions(transactions, is_investment=is_investment)
+            self.transaction_model.set_transactions(
+                transactions, is_investment=is_investment, highlighted_ids=self._highlighted_transaction_ids
+            )
         self.transaction_view.resizeColumnsToContents()
         if keep_value_checked:
             self._on_value_checkbox_toggled(True)

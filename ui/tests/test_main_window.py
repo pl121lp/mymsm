@@ -358,6 +358,102 @@ def test_import_button_passes_parsed_qfx_acct_id_to_dialog(qapp, conn, monkeypat
     assert captured["qfx_acct_id"] == "597883795"
 
 
+def test_import_selects_account_and_highlights_imported_rows(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    def fake_exec(self):
+        self.imported_transaction_ids = [9001]
+        self.imported_count = 1
+        self.imported_account_id = 3
+        conn.execute(
+            "INSERT INTO transactions VALUES "
+            "(9001, 3, NULL, NULL, '2024-05-01', -1.00, NULL, NULL, NULL, NULL, NULL, NULL)"
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", fake_exec)
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 5, 1), amount=Decimal("-1.00"),
+        fitid="FAKE1", name="Fake Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
+    )
+
+    window = MainWindow(conn)
+    checking_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[0] == 1
+    )
+    window.account_view.selectRow(checking_row)  # select an account other than the import target
+
+    window._on_import_button_clicked()
+
+    indexes = window.account_view.selectionModel().selectedRows()
+    assert indexes
+    assert window.account_model.account_at(indexes[0].row())[0] == 3
+
+    row_index = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[0] == 9001
+    )
+    color = window.transaction_model.data(window.transaction_model.index(row_index, 0), Qt.BackgroundRole)
+    assert color is not None
+
+
+def test_selecting_a_different_account_forgets_highlighted_import_rows(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    def fake_exec(self):
+        self.imported_transaction_ids = [9001]
+        self.imported_count = 1
+        self.imported_account_id = 3
+        conn.execute(
+            "INSERT INTO transactions VALUES "
+            "(9001, 3, NULL, NULL, '2024-05-01', -1.00, NULL, NULL, NULL, NULL, NULL, NULL)"
+        )
+        return QDialog.Accepted
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", fake_exec)
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 5, 1), amount=Decimal("-1.00"),
+        fitid="FAKE1", name="Fake Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
+    )
+
+    window = MainWindow(conn)
+    window._on_import_button_clicked()
+
+    checking_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[0] == 1
+    )
+    window.account_view.selectRow(checking_row)  # switch away from the imported account
+
+    brokerage_row = next(
+        row for row in range(window.account_model.rowCount())
+        if window.account_model.account_at(row)[0] == 3
+    )
+    window.account_view.selectRow(brokerage_row)  # switch back
+
+    row_index = next(
+        r for r in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(r)[0] == 9001
+    )
+    color = window.transaction_model.data(window.transaction_model.index(row_index, 0), Qt.BackgroundRole)
+    assert color is None
+
+
 def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
     monkeypatch.setattr(QMessageBox, "question", lambda *a, **kw: QMessageBox.Yes)
 

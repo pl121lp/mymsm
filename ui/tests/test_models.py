@@ -264,6 +264,44 @@ def test_transaction_at_returns_full_row_tuple():
     assert model.transaction_at(0) == NON_INVESTMENT_ROW
 
 
+def test_highlighted_transaction_row_has_background():
+    model = TransactionTableModel([NON_INVESTMENT_ROW], highlighted_ids={1000})
+    color = model.data(model.index(0, 0), Qt.BackgroundRole)
+    assert color is not None
+
+
+def test_non_highlighted_transaction_row_has_no_background_override():
+    model = TransactionTableModel([NON_INVESTMENT_ROW], highlighted_ids={9999})
+    assert model.data(model.index(0, 0), Qt.BackgroundRole) is None
+
+
+def test_transaction_row_with_no_highlighted_ids_has_no_background_override():
+    model = TransactionTableModel([NON_INVESTMENT_ROW])
+    assert model.data(model.index(0, 0), Qt.BackgroundRole) is None
+
+
+def test_highlighted_transaction_row_uses_light_theme_green_background_in_light_mode(qapp):
+    model = TransactionTableModel([NON_INVESTMENT_ROW], highlighted_ids={1000})
+    color = model.data(model.index(0, 0), Qt.BackgroundRole)
+    assert color == models.IMPORTED_BACKGROUND_LIGHT
+
+
+def test_highlighted_transaction_row_uses_dark_theme_green_background_in_dark_mode(qapp):
+    theme.apply_theme(qapp, True)
+    try:
+        model = TransactionTableModel([NON_INVESTMENT_ROW], highlighted_ids={1000})
+        color = model.data(model.index(0, 0), Qt.BackgroundRole)
+        assert color == models.IMPORTED_BACKGROUND_DARK
+    finally:
+        theme.apply_theme(qapp, False)
+
+
+def test_set_transactions_without_highlighted_ids_clears_previous_highlight():
+    model = TransactionTableModel([NON_INVESTMENT_ROW], highlighted_ids={1000})
+    model.set_transactions([NON_INVESTMENT_ROW])
+    assert model.data(model.index(0, 0), Qt.BackgroundRole) is None
+
+
 def test_sort_by_amount_ascending():
     rows = [
         (1, date(2024, 1, 1), "Store A", "Groceries", "m1", Decimal("50.00"), None, None, None, None),

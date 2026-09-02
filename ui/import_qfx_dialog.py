@@ -65,6 +65,7 @@ class ImportQfxDialog(QDialog):
         self._qfx_acct_id = qfx_acct_id
         self.imported_count = 0
         self.imported_transaction_ids = []
+        self.imported_account_id = None
 
         self.setWindowTitle("Import QFX")
 
@@ -192,4 +193,5 @@ class ImportQfxDialog(QDialog):
         if self._qfx_acct_id is not None:
             writes.set_account_qfx_id(self._conn, account_id, self._qfx_acct_id)
         self.imported_count = len(self.imported_transaction_ids)
+        self.imported_account_id = account_id
         self.accept()
