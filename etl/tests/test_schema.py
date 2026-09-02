@@ -27,6 +27,13 @@ def test_accounts_table_currency_column_defaults_to_usd():
     assert conn.execute("SELECT currency FROM accounts WHERE account_id = 1").fetchone() == ("USD",)
 
 
+def test_accounts_table_has_qfx_acct_id_column():
+    conn = duckdb.connect(":memory:")
+    apply_schema(conn)
+    columns = {row[1] for row in conn.execute("PRAGMA table_info('accounts')").fetchall()}
+    assert "qfx_acct_id" in columns
+
+
 def test_securities_table_has_id_and_name_columns():
     conn = duckdb.connect(":memory:")
     apply_schema(conn)

@@ -19,6 +19,22 @@ VEST_ACTIVITY = "18"
 RSU_SELL_ACTIVITY = "19"
 
 
+def get_qfx_acct_id(conn: duckdb.DuckDBPyConnection, account_id: int) -> str | None:
+    row = conn.execute(
+        "SELECT qfx_acct_id FROM accounts WHERE account_id = ?", [account_id]
+    ).fetchone()
+    return row[0] if row else None
+
+
+def find_account_by_qfx_id(conn: duckdb.DuckDBPyConnection, qfx_acct_id: str) -> int | None:
+    """Returns the open account previously matched to this QFX ACCTID, or
+    None if no open account is mapped to it."""
+    row = conn.execute(
+        "SELECT account_id FROM accounts WHERE qfx_acct_id = ? AND NOT is_closed", [qfx_acct_id]
+    ).fetchone()
+    return row[0] if row else None
+
+
 def list_accounts(
     conn: duckdb.DuckDBPyConnection, include_closed: bool = False, only_closed: bool = False
 ) -> list[tuple]:

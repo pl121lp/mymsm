@@ -7,6 +7,7 @@ from decimal import Decimal, InvalidOperation
 
 _STMTTRN_RE = re.compile(r"<STMTTRN>(.*?)</STMTTRN>", re.DOTALL | re.IGNORECASE)
 _TAG_RE = re.compile(r"<([A-Za-z0-9.]+)>(.*)")
+_ACCTID_RE = re.compile(r"<ACCTID>(.+)", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -70,3 +71,13 @@ def parse_qfx(path):
         if record is not None:
             records.append(record)
     return records
+
+
+def parse_account_id(path):
+    """Reads a QFX/OFX file and returns the ACCTID from its account-header
+    block (BANKACCTFROM or CCACCTFROM), or None if the file has none."""
+    with open(path, "r", encoding="cp1252", errors="replace") as qfx_file:
+        text = qfx_file.read()
+
+    match = _ACCTID_RE.search(text)
+    return match.group(1).strip() if match else None

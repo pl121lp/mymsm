@@ -17,6 +17,7 @@ from writes import (
     restore_transaction_fields,
     set_account_closed,
     set_account_favorite,
+    set_account_qfx_id,
     update_account,
     update_transaction,
 )
@@ -61,6 +62,28 @@ def test_set_account_favorite_unmarks_favorite_account(conn):
     set_account_favorite(conn, account_id=1, is_favorite=False)
     row = conn.execute("SELECT is_favorite FROM accounts WHERE account_id = 1").fetchone()
     assert row == (False,)
+
+
+def test_set_account_qfx_id_stores_mapping(conn):
+    set_account_qfx_id(conn, account_id=1, qfx_acct_id="597883795")
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == ("597883795",)
+
+
+def test_set_account_qfx_id_overwrites_existing_mapping(conn):
+    set_account_qfx_id(conn, account_id=1, qfx_acct_id="597883795")
+    set_account_qfx_id(conn, account_id=1, qfx_acct_id="a-different-id")
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == ("a-different-id",)
+
+
+def test_set_account_qfx_id_clears_the_same_id_from_its_previous_account(conn):
+    # Reassigning a QFX ACCTID to a different account must keep the mapping
+    # one-to-one, or find_account_by_qfx_id's lookup becomes ambiguous.
+    set_account_qfx_id(conn, account_id=3, qfx_acct_id="597883795")
+    set_account_qfx_id(conn, account_id=1, qfx_acct_id="597883795")
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 3").fetchone()
+    assert row == (None,)
 
 
 def test_update_account_changes_name_and_opening_balance(conn):

@@ -62,6 +62,20 @@ def set_account_favorite(conn, account_id, is_favorite):
     )
 
 
+def set_account_qfx_id(conn, account_id, qfx_acct_id):
+    """Records which account a QFX file's ACCTID maps to, so future imports
+    of that same file source can auto-select this account. Clears the id
+    from any other account first, keeping the mapping one-to-one so a later
+    lookup by qfx_acct_id can't be ambiguous."""
+    conn.execute(
+        "UPDATE accounts SET qfx_acct_id = NULL WHERE qfx_acct_id = ? AND account_id != ?",
+        [qfx_acct_id, account_id],
+    )
+    conn.execute(
+        "UPDATE accounts SET qfx_acct_id = ? WHERE account_id = ?", [qfx_acct_id, account_id]
+    )
+
+
 def delete_account(conn, account_id):
     """Permanently deletes an account and its transactions (the transactions
     FK has no cascade, so they must be removed first).

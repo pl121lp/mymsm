@@ -26,6 +26,21 @@ def test_preselects_default_account_when_given(qapp, conn):
     assert dialog.account_combo.currentData() == 3
 
 
+def test_preselects_account_matching_qfx_acct_id_over_default(qapp, conn):
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 1")
+    dialog = ImportQfxDialog(
+        conn, records=[], default_account_id=3, qfx_acct_id="597883795", parent=None
+    )
+    assert dialog.account_combo.currentData() == 1
+
+
+def test_falls_back_to_default_account_when_qfx_acct_id_has_no_match(qapp, conn):
+    dialog = ImportQfxDialog(
+        conn, records=[], default_account_id=3, qfx_acct_id="unmapped-id", parent=None
+    )
+    assert dialog.account_combo.currentData() == 3
+
+
 def test_all_records_go_to_import_table_when_no_existing_match(qapp, conn):
     records = [_record(name="Brand New Payee", amount="-42.00", txn_date=date(2024, 4, 1))]
     dialog = ImportQfxDialog(conn, records=records, default_account_id=1, parent=None)
@@ -87,6 +102,30 @@ def test_apply_inserts_only_non_duplicate_records_and_accepts(qapp, conn):
         "WHERE t.account_id = 1 AND t.txn_date = '2024-04-01'"
     ).fetchone()
     assert row == ("Brand New Payee", Decimal("-42.00"))
+
+
+def test_apply_saves_qfx_acct_id_mapping_for_selected_account(qapp, conn):
+    records = [_record(name="Brand New Payee", amount="-42.00", txn_date=date(2024, 4, 1))]
+    dialog = ImportQfxDialog(
+        conn, records=records, default_account_id=1, qfx_acct_id="597883795", parent=None
+    )
+
+    dialog._on_apply()
+
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == ("597883795",)
+
+
+def test_apply_leaves_qfx_acct_id_untouched_when_file_has_none(qapp, conn):
+    records = [_record(name="Brand New Payee", amount="-42.00", txn_date=date(2024, 4, 1))]
+    dialog = ImportQfxDialog(
+        conn, records=records, default_account_id=1, qfx_acct_id=None, parent=None
+    )
+
+    dialog._on_apply()
+
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (None,)
 
 
 def test_discard_button_makes_no_database_changes(qapp, conn):

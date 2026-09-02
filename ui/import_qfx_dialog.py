@@ -58,10 +58,11 @@ class ImportQfxDialog(QDialog):
     look like duplicates of transactions already in the selected account,
     and applies the non-duplicate rows to the database on Apply."""
 
-    def __init__(self, conn, records, default_account_id=None, parent=None):
+    def __init__(self, conn, records, default_account_id=None, qfx_acct_id=None, parent=None):
         super().__init__(parent)
         self._conn = conn
         self._records = records
+        self._qfx_acct_id = qfx_acct_id
         self.imported_count = 0
         self.imported_transaction_ids = []
 
@@ -70,8 +71,12 @@ class ImportQfxDialog(QDialog):
         self.account_combo = QComboBox()
         for account_id, name, *_rest in data.list_accounts(conn):
             self.account_combo.addItem(name, account_id)
-        if default_account_id is not None:
-            index = self.account_combo.findData(default_account_id)
+        matched_account_id = (
+            data.find_account_by_qfx_id(conn, qfx_acct_id) if qfx_acct_id is not None else None
+        )
+        selected_account_id = matched_account_id if matched_account_id is not None else default_account_id
+        if selected_account_id is not None:
+            index = self.account_combo.findData(selected_account_id)
             if index >= 0:
                 self.account_combo.setCurrentIndex(index)
         self.account_combo.currentIndexChanged.connect(self._refresh_tables)
@@ -184,5 +189,7 @@ class ImportQfxDialog(QDialog):
         except Exception as exc:
             self.error_label.setText(f"Failed to import records: {exc}")
             return
+        if self._qfx_acct_id is not None:
+            writes.set_account_qfx_id(self._conn, account_id, self._qfx_acct_id)
         self.imported_count = len(self.imported_transaction_ids)
         self.accept()

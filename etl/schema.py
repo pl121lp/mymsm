@@ -20,7 +20,8 @@ CREATE TABLE accounts (
     interest_category_id BIGINT REFERENCES categories(category_id),
     loan_interest_rate   DECIMAL(9,6),
     loan_payment_amount  DECIMAL(18,4),
-    loan_payment_count   INTEGER
+    loan_payment_count   INTEGER,
+    qfx_acct_id          VARCHAR
 );
 
 CREATE TABLE payees (

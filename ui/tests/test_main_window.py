@@ -225,6 +225,7 @@ def test_import_button_opens_dialog_and_refreshes_accounts_on_accept(qapp, conn,
         main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
     )
     monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
 
     reload_calls = []
     original_reload = MainWindow._reload_accounts
@@ -263,6 +264,7 @@ def test_import_button_does_nothing_on_discard(qapp, conn, monkeypatch):
         main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
     )
     monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
 
     reload_calls = []
     original_reload = MainWindow._reload_accounts
@@ -295,13 +297,17 @@ def test_import_button_defaults_to_selected_account(qapp, conn, monkeypatch):
         main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
     )
     monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
 
     captured = {}
     original_init = import_qfx_dialog.ImportQfxDialog.__init__
 
-    def spy_init(self, conn, records, default_account_id=None, parent=None):
+    def spy_init(self, conn, records, default_account_id=None, qfx_acct_id=None, parent=None):
         captured["default_account_id"] = default_account_id
-        original_init(self, conn, records, default_account_id=default_account_id, parent=parent)
+        original_init(
+            self, conn, records,
+            default_account_id=default_account_id, qfx_acct_id=qfx_acct_id, parent=parent,
+        )
 
     monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "__init__", spy_init)
     monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", lambda self: QDialog.Rejected)
@@ -316,6 +322,40 @@ def test_import_button_defaults_to_selected_account(qapp, conn, monkeypatch):
     window._on_import_button_clicked()
 
     assert captured["default_account_id"] == 1
+
+
+def test_import_button_passes_parsed_qfx_acct_id_to_dialog(qapp, conn, monkeypatch):
+    import import_qfx_dialog
+    import main_window
+    from qfx_import import QfxRecord
+
+    fake_record = QfxRecord(
+        trn_type="DEBIT", txn_date=date(2024, 4, 1), amount=Decimal("-9.00"),
+        fitid="1", name="Brand New Payee", memo="", checknum="",
+    )
+    monkeypatch.setattr(
+        main_window.QFileDialog, "getOpenFileName", lambda *a, **k: ("sample.qfx", "")
+    )
+    monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: "597883795")
+
+    captured = {}
+    original_init = import_qfx_dialog.ImportQfxDialog.__init__
+
+    def spy_init(self, conn, records, default_account_id=None, qfx_acct_id=None, parent=None):
+        captured["qfx_acct_id"] = qfx_acct_id
+        original_init(
+            self, conn, records,
+            default_account_id=default_account_id, qfx_acct_id=qfx_acct_id, parent=parent,
+        )
+
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "__init__", spy_init)
+    monkeypatch.setattr(import_qfx_dialog.ImportQfxDialog, "exec", lambda self: QDialog.Rejected)
+
+    window = MainWindow(conn)
+    window._on_import_button_clicked()
+
+    assert captured["qfx_acct_id"] == "597883795"
 
 
 def test_close_button_closes_account_and_reloads(qapp, conn, monkeypatch):
@@ -682,6 +722,29 @@ def test_account_details_button_opens_dialog_with_selected_account_fields(qapp, 
     assert captured["opening_balance"] == Decimal("100.00")
     assert captured["status_text"] == "Open"
     assert "1,047.70" in captured["balance_text"]  # opening 100.00 plus seeded transactions
+
+
+def test_account_details_button_passes_stored_qfx_acct_id(qapp, conn, monkeypatch):
+    import account_details_dialog
+
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 1")
+
+    captured = {}
+    original_init = account_details_dialog.AccountDetailsDialog.__init__
+
+    def spy_init(self, **kwargs):
+        captured.update(kwargs)
+        original_init(self, **kwargs)
+
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "__init__", spy_init)
+    monkeypatch.setattr(account_details_dialog.AccountDetailsDialog, "exec", lambda self: QDialog.Accepted)
+
+    window = MainWindow(conn)
+    window.account_view.selectRow(1)  # row 1 = Checking (open, USD, see conn fixture ordering)
+
+    window._on_account_details_button_clicked()
+
+    assert captured["qfx_acct_id"] == "597883795"
 
 
 def test_account_details_button_shows_closed_status_for_closed_account(qapp, conn, monkeypatch):
@@ -1331,6 +1394,7 @@ def test_ctrl_z_undoes_an_import(qapp, conn, monkeypatch):
         checknum="",
     )
     monkeypatch.setattr(main_window, "parse_qfx", lambda path: [fake_record])
+    monkeypatch.setattr(main_window, "parse_account_id", lambda path: None)
     monkeypatch.setattr(
         main_window.QFileDialog, "getOpenFileName", lambda *a, **kw: ("dummy.qfx", "")
     )

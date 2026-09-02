@@ -3,8 +3,10 @@ from decimal import Decimal
 
 from data import (
     count_transactions_by_payee,
+    find_account_by_qfx_id,
     get_date_opened,
     get_loan_terms,
+    get_qfx_acct_id,
     get_transaction_row,
     list_accounts,
     list_categories,
@@ -27,6 +29,30 @@ def test_list_accounts_excludes_closed_by_default(conn):
         (3, "Brokerage", "5", "SEK", Decimal("226.30"), False, False),
         (1, "Checking", "Bank", "USD", Decimal("1047.70"), False, False),
     ]
+
+
+def test_find_account_by_qfx_id_returns_matching_open_account(conn):
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 1")
+    assert find_account_by_qfx_id(conn, "597883795") == 1
+
+
+def test_find_account_by_qfx_id_returns_none_when_no_match(conn):
+    assert find_account_by_qfx_id(conn, "not-a-mapped-id") is None
+
+
+def test_find_account_by_qfx_id_ignores_match_on_closed_account(conn):
+    # account_id 2 ("Old Card") is seeded as closed (see conftest.py).
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 2")
+    assert find_account_by_qfx_id(conn, "597883795") is None
+
+
+def test_get_qfx_acct_id_returns_stored_value(conn):
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 1")
+    assert get_qfx_acct_id(conn, 1) == "597883795"
+
+
+def test_get_qfx_acct_id_returns_none_when_unset(conn):
+    assert get_qfx_acct_id(conn, 1) is None
 
 
 def test_list_accounts_includes_closed_when_requested(conn):

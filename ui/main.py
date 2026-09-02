@@ -42,6 +42,10 @@ def main():
     # write path (add_account's INSERT, set_account_favorite) always supplies an
     # explicit boolean, so a NULL can't actually occur in practice).
     conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS is_favorite BOOLEAN DEFAULT FALSE")
+    # Backfills qfx_acct_id on a pre-existing money.duckdb (etl/schema.py adds
+    # it for fresh databases). Nullable and unused until an account is first
+    # matched to a QFX import, at which point ImportQfxDialog._on_apply sets it.
+    conn.execute("ALTER TABLE accounts ADD COLUMN IF NOT EXISTS qfx_acct_id VARCHAR")
 
     window = MainWindow(conn)
     window.showMaximized()

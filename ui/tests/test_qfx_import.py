@@ -3,7 +3,7 @@ from decimal import Decimal
 
 import pytest
 
-from qfx_import import QfxRecord, parse_qfx
+from qfx_import import QfxRecord, parse_account_id, parse_qfx
 
 SAMPLE_QFX = """
 OFXHEADER:100
@@ -140,3 +140,27 @@ def test_parse_qfx_skips_malformed_blocks_missing_required_fields(tmp_path):
 def test_parse_qfx_raises_for_missing_file(tmp_path):
     with pytest.raises(OSError):
         parse_qfx(tmp_path / "does-not-exist.qfx")
+
+
+def test_parse_account_id_extracts_bank_acctid(tmp_path):
+    qfx_path = tmp_path / "sample.qfx"
+    qfx_path.write_text(SAMPLE_QFX)
+
+    assert parse_account_id(qfx_path) == "597883795"
+
+
+def test_parse_account_id_extracts_cc_acctid(tmp_path):
+    qfx_path = tmp_path / "sample.qfx"
+    qfx_path.write_text(
+        "<CCSTMTRS>\n<CURDEF>USD\n<CCACCTFROM>\n<ACCTID>1265845169-8964\n</CCACCTFROM>\n"
+        "<BANKTRANLIST>\n</BANKTRANLIST>\n</CCSTMTRS>\n"
+    )
+
+    assert parse_account_id(qfx_path) == "1265845169-8964"
+
+
+def test_parse_account_id_returns_none_when_absent(tmp_path):
+    qfx_path = tmp_path / "sample.qfx"
+    qfx_path.write_text("<STMTTRN>\n<TRNTYPE>DEBIT\n</STMTTRN>\n")
+
+    assert parse_account_id(qfx_path) is None

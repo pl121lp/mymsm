@@ -33,6 +33,7 @@ class AccountDetailsDialog(QDialog):
         balance_label,
         balance_text,
         status_text,
+        qfx_acct_id=None,
         parent=None,
     ):
         super().__init__(parent)
@@ -49,6 +50,7 @@ class AccountDetailsDialog(QDialog):
         self.balance_label = QLabel(balance_label)
         self.balance_value = QLabel(balance_text)
         self.status_value = QLabel(status_text)
+        self.qfx_acct_id_edit = QLineEdit(qfx_acct_id or "")
         for value_label in (self.type_value, self.currency_value, self.balance_value, self.status_value):
             enable_label_copy(value_label)
 
@@ -59,6 +61,7 @@ class AccountDetailsDialog(QDialog):
         form.addRow("Starting balance:", self.opening_balance_edit)
         form.addRow(self.balance_label, self.balance_value)
         form.addRow("Status:", self.status_value)
+        form.addRow("QFX Account ID:", self.qfx_acct_id_edit)
         form.setAlignment(Qt.AlignTop)
 
         self.error_label = QLabel()
@@ -93,6 +96,9 @@ class AccountDetailsDialog(QDialog):
                 self._account_id,
                 name=self.name_edit.text().strip(),
                 opening_balance=_parse_decimal(self.opening_balance_edit.text()),
+            )
+            writes.set_account_qfx_id(
+                self._conn, self._account_id, self.qfx_acct_id_edit.text().strip() or None
             )
         except Exception as exc:
             self.error_label.setText(f"Failed to update account: {exc}")

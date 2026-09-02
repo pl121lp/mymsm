@@ -34,6 +34,16 @@ def test_dialog_shows_account_fields(qapp, conn):
     assert dialog.status_value.text() == "Open"
 
 
+def test_dialog_shows_qfx_acct_id_when_set(qapp, conn):
+    dialog = _make_dialog(conn, qfx_acct_id="597883795")
+    assert dialog.qfx_acct_id_edit.text() == "597883795"
+
+
+def test_dialog_shows_empty_qfx_acct_id_when_not_set(qapp, conn):
+    dialog = _make_dialog(conn, qfx_acct_id=None)
+    assert dialog.qfx_acct_id_edit.text() == ""
+
+
 def test_dialog_uses_value_label_for_investment_accounts(qapp, conn):
     dialog = _make_dialog(conn, balance_label="Value:")
 
@@ -92,3 +102,24 @@ def test_save_writes_updated_name_and_balance_and_accepts(qapp, conn):
         "SELECT name, opening_balance FROM accounts WHERE account_id = 1"
     ).fetchone()
     assert row == ("Checking Renamed", Decimal("250.00"))
+
+
+def test_save_writes_edited_qfx_acct_id(qapp, conn):
+    dialog = _make_dialog(conn, qfx_acct_id=None)
+    dialog.qfx_acct_id_edit.setText("597883795")
+
+    dialog._on_accept()
+
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == ("597883795",)
+
+
+def test_save_with_blank_qfx_acct_id_clears_existing_mapping(qapp, conn):
+    conn.execute("UPDATE accounts SET qfx_acct_id = '597883795' WHERE account_id = 1")
+    dialog = _make_dialog(conn, qfx_acct_id="597883795")
+    dialog.qfx_acct_id_edit.setText("")
+
+    dialog._on_accept()
+
+    row = conn.execute("SELECT qfx_acct_id FROM accounts WHERE account_id = 1").fetchone()
+    assert row == (None,)

@@ -53,7 +53,7 @@ from models import (
     format_currency,
 )
 from navigation_history import NavigationHistory
-from qfx_import import parse_qfx
+from qfx_import import parse_account_id, parse_qfx
 from reports_tab import ReportsPane
 from search_tab import SearchPane
 from table_copy import enable_cell_copy, enable_label_copy
@@ -336,6 +336,7 @@ class MainWindow(QMainWindow):
             balance_label="Value:" if is_investment else "Balance:",
             balance_text=f"{format_currency(usd_balance)} USD",
             status_text="Closed" if is_closed else "Open",
+            qfx_acct_id=data.get_qfx_acct_id(self._conn, account_id),
             parent=self,
         )
         if dialog.exec() != AccountDetailsDialog.Accepted:
@@ -520,8 +521,10 @@ class MainWindow(QMainWindow):
         default_account_id = (
             self.account_model.account_at(selected_rows[0].row())[0] if selected_rows else None
         )
+        qfx_acct_id = parse_account_id(file_path)
         dialog = ImportQfxDialog(
-            self._conn, records, default_account_id=default_account_id, parent=self
+            self._conn, records,
+            default_account_id=default_account_id, qfx_acct_id=qfx_acct_id, parent=self
         )
         if dialog.exec() != ImportQfxDialog.Accepted:
             return
