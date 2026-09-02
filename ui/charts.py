@@ -1,5 +1,7 @@
 """Shared QtCharts chart builders for time-series widgets."""
 
+from datetime import date
+
 from PySide6.QtCharts import (
     QAreaSeries,
     QBarCategoryAxis,
@@ -200,13 +202,58 @@ def build_stacked_area_chart(title, bands, mark_zero=False):
     return chart
 
 
+# Cap on how many year labels the axis shows at once -- beyond this, the
+# year step grows (every 2nd, 3rd, 4th, ... year) so labels keep fitting
+# without crowding into each other.
+_MAX_ANNUAL_AXIS_LABELS = 10
+
+
+def _year_axis_labels(categories):
+    """Build sparse x-axis labels marking each year (skipping years as needed).
+
+    categories is a list of "YYYY-MM-DD" date strings. Returns a parallel
+    list where the first category of each labeled year holds that year as
+    text and every other position holds an invisible placeholder -- used
+    so QBarCategoryAxis shows one tick per year instead of a label per
+    (too-dense) bar. Placeholders must be unique because QBarCategoryAxis
+    silently drops repeated identical category strings, which would
+    desync the axis from the bars. Falls back to all-blank labels (still
+    unique) if categories aren't parseable dates.
+    """
+    blank = lambda index: "​" * (index + 1)  # zero-width space, unique per position
+    try:
+        years = [date.fromisoformat(category).year for category in categories]
+    except ValueError:
+        return [blank(index) for index in range(len(categories))]
+    if not years:
+        return []
+
+    distinct_years = sorted(set(years))
+    step = 1
+    while -(-len(distinct_years) // step) > _MAX_ANNUAL_AXIS_LABELS:  # ceil division
+        step += 1
+    labeled_years = set(distinct_years[::step])
+
+    labels = []
+    seen_years = set()
+    for index, year in enumerate(years):
+        if year in labeled_years and year not in seen_years:
+            labels.append(str(year))
+            seen_years.add(year)
+        else:
+            labels.append(blank(index))
+    return labels
+
+
 def build_bar_chart(title, categories, values):
     """Build a single-series bar chart.
 
-    categories is a list of x-axis labels; values is a parallel list of
-    numeric values. Categories aren't drawn on the axis (too dense to be
-    legible when there are many bars) -- instead the category for a bar
-    is shown in a tooltip on hover.
+    categories is a list of x-axis labels, expected to be "YYYY-MM-DD" date
+    strings; values is a parallel list of numeric values. The full category
+    is too dense to be legible as an axis label on every bar, so the axis
+    instead shows one label per year (or every other year, once there are
+    too many years to fit) -- the category for a bar is still shown in
+    full in a tooltip on hover.
     """
     chart = QChart()
     chart.setTheme(theme.chart_theme())
@@ -229,9 +276,26 @@ def build_bar_chart(title, categories, values):
     series.hovered.connect(_on_bar_hovered)
     chart.addSeries(series)
 
+    axis_labels = _year_axis_labels(categories)
     axis_x = QBarCategoryAxis()
-    axis_x.append(categories)
-    axis_x.setLabelsVisible(False)
+    axis_x.append(axis_labels)
+    axis_x.setLabelsVisible(any(label.isdigit() for label in axis_labels))
+    label_font = axis_x.labelsFont()
+    if label_font.pointSize() > 0:
+        label_font.setPointSize(label_font.pointSize() + 2)
+    else:
+        label_font.setPixelSize(label_font.pixelSize() + 3)
+    axis_x.setLabelsFont(label_font)
+    # Each bar gets an equal, often very narrow, horizontal slot on a
+    # QBarCategoryAxis regardless of how many labels are populated -- with
+    # dense sampling that slot is too thin for horizontal text at any font
+    # size, so by default it gets elided to "...". Rotating the label
+    # vertical alone doesn't avoid this (Qt still elides against the same
+    # narrow per-bar slot width), so truncation is disabled outright; the
+    # rotated label then simply overflows into the neighboring (blank)
+    # slots' space instead of being clipped.
+    axis_x.setLabelsAngle(-90)
+    axis_x.setTruncateLabels(False)
     chart.addAxis(axis_x, Qt.AlignBottom)
     series.attachAxis(axis_x)
 
