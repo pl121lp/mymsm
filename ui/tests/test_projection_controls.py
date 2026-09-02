@@ -297,3 +297,21 @@ def test_add_profile_button_ignores_duplicate_name(qapp, monkeypatch):
 
     assert calls == []
     assert panel.profile_combo.count() == 1
+
+
+def test_panel_has_compare_all_profiles_button_unchecked_by_default(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+
+    assert panel.compare_all_button.isCheckable()
+    assert panel.compare_all_button.isChecked() is False
+
+
+def test_clicking_compare_all_profiles_button_emits_compare_mode_toggled(qapp):
+    panel = ProjectionControlsPanel(today=date(2024, 6, 15))
+    calls = []
+    panel.compare_mode_toggled.connect(calls.append)
+
+    panel.compare_all_button.click()
+    panel.compare_all_button.click()
+
+    assert calls == [True, False]

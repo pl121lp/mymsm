@@ -137,6 +137,7 @@ class ReportsPane(QWidget):
         self._projection_asset_values = {}
         self._projection_profiles = {}
         self._active_projection_profile = DEFAULT_PROFILE_NAME
+        self._projection_compare_mode = False
         self._assets_investments_breakdown = []
         self._recurring_transactions = []
         self._recurring_worker = None
@@ -193,6 +194,7 @@ class ReportsPane(QWidget):
         self.projection_controls.profile_selected.connect(self._on_projection_profile_selected)
         self.projection_controls.profile_renamed.connect(self._on_projection_profile_renamed)
         self.projection_controls.profile_added.connect(self._on_projection_profile_added)
+        self.projection_controls.compare_mode_toggled.connect(self._on_projection_compare_mode_toggled)
 
         # Wrapped in a scroll area so the (tall) controls panel scrolls
         # internally instead of pushing the chart down; Ignored vertical size
@@ -965,14 +967,8 @@ class ReportsPane(QWidget):
                 extra_annual_cash_flows.get(row.year, Decimal("0")) + row.net_cash_flow
             )
 
-    def _render_projection_chart(self):
-        values = self.projection_controls.values()
+    def _compute_projection_rows(self, values, house_sale_value):
         hundred = Decimal("100")
-        house_sale_value = self._projection_asset_values.get(
-            values["house_account_id"], Decimal("0")
-        )
-        if not values.get("include_house_sale", True):
-            house_sale_value = Decimal("0")
         inheritance_amount = Decimal(str(values["inheritance_amount"]))
         if not values.get("include_inheritance", True):
             inheritance_amount = Decimal("0")
@@ -1006,7 +1002,23 @@ class ReportsPane(QWidget):
             withdrawal_tax_rate=Decimal(str(values["withdrawal_tax_rate"])) / hundred,
             extra_annual_cash_flows=extra_annual_cash_flows,
         )
-        rows = compute_projection(inputs)
+        return compute_projection(inputs)
+
+    def _projection_house_sale_value(self, values):
+        house_sale_value = self._projection_asset_values.get(
+            values.get("house_account_id"), Decimal("0")
+        )
+        if not values.get("include_house_sale", True):
+            house_sale_value = Decimal("0")
+        return house_sale_value
+
+    def _render_projection_chart(self):
+        if self._projection_compare_mode:
+            self._render_projection_compare_chart()
+            return
+        values = self.projection_controls.values()
+        house_sale_value = self._projection_house_sale_value(values)
+        rows = self._compute_projection_rows(values, house_sale_value)
         assets_total = sum(self._projection_asset_values.values(), start=Decimal("0"))
         assets_total_after_house_sale = assets_total - house_sale_value
         house_sale_year = values["house_sale_year"]
@@ -1026,6 +1038,25 @@ class ReportsPane(QWidget):
         ]
         chart = build_stacked_area_chart("Net Worth Projection (USD)", bands, mark_zero=True)
         self.chart_view.setChart(chart)
+
+    def _render_projection_compare_chart(self):
+        starting_investment_value = self.projection_controls.values()["starting_investment_value"]
+        series = []
+        for name, saved_values in self._projection_profiles.items():
+            values = default_projection_values()
+            values.update(saved_values)
+            values["starting_investment_value"] = starting_investment_value
+            house_sale_value = self._projection_house_sale_value(values)
+            rows = self._compute_projection_rows(values, house_sale_value)
+            series.append((name, [(date(row.year, 1, 1), row.net_worth) for row in rows]))
+        chart = build_line_chart("Net Worth Projection - All Profiles (USD)", series, mark_zero=True)
+        self.chart_view.setChart(chart)
+
+    def _on_projection_compare_mode_toggled(self, enabled):
+        self._projection_compare_mode = enabled
+        if enabled:
+            self._save_current_projection_profile()
+        self._render_projection_chart()
 
     def _load_college_tuition_report(self):
         try:

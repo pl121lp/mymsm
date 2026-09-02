@@ -61,6 +61,7 @@ class ProjectionControlsPanel(QWidget):
     profile_selected = Signal(str)
     profile_renamed = Signal(str, str)
     profile_added = Signal(str)
+    compare_mode_toggled = Signal(bool)
 
     def __init__(self, parent=None, today=None):
         super().__init__(parent)
@@ -76,6 +77,13 @@ class ProjectionControlsPanel(QWidget):
         self.add_profile_button = QPushButton("+")
         self.add_profile_button.setToolTip("Add a new profile")
         self.add_profile_button.clicked.connect(self._on_add_profile_clicked)
+
+        self.compare_all_button = QPushButton("Compare All Profiles")
+        self.compare_all_button.setCheckable(True)
+        self.compare_all_button.setToolTip(
+            "Show every profile's net worth projection on one graph"
+        )
+        self.compare_all_button.toggled.connect(self.compare_mode_toggled.emit)
 
         self.birth_year_spinbox = year_spinbox(defaults["birth_year"])
         self.end_year_spinbox = year_spinbox(defaults["end_year"])
@@ -135,6 +143,7 @@ class ProjectionControlsPanel(QWidget):
         profile_row.addWidget(self.profile_combo)
         profile_row.addWidget(self.profile_name_edit)
         profile_row.addWidget(self.add_profile_button)
+        profile_row.addWidget(self.compare_all_button)
         layout.addLayout(profile_row)
 
         timeline_form = QFormLayout()

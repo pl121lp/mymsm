@@ -1460,6 +1460,61 @@ def test_switching_projection_profile_saves_current_and_loads_selected(qapp, dic
     assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 80
 
 
+def test_toggling_compare_mode_plots_one_line_per_profile_without_assets_band(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(
+        reports_tab,
+        "load_projection_profiles",
+        lambda: (
+            DEFAULT_PROFILE_NAME,
+            {DEFAULT_PROFILE_NAME: {}, "Retire Early": {"retirement_age": 50}},
+        ),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    pane.projection_controls.compare_all_button.click()
+
+    chart = pane.chart_view.chart()
+    series_names = {s.name() for s in chart.series() if s.name()}
+    assert series_names == {DEFAULT_PROFILE_NAME, "Retire Early"}
+
+
+def test_toggling_compare_mode_off_restores_stacked_bands(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    pane.projection_controls.compare_all_button.click()
+    pane.projection_controls.compare_all_button.click()
+
+    chart = pane.chart_view.chart()
+    series_names = [s.name() for s in chart.series() if s.name()]
+    assert series_names == ["Assets", "Investments"]
+
+
+def test_toggling_compare_mode_saves_unsaved_edits_to_active_profile_first(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(
+        reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {DEFAULT_PROFILE_NAME: {}})
+    )
+    saved = {}
+    monkeypatch.setattr(
+        reports_tab,
+        "save_projection_profiles",
+        lambda profiles, active_profile: saved.update(profiles=profiles, active_profile=active_profile),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+    pane.projection_controls.retirement_age_spinbox.setValue(50)
+
+    pane.projection_controls.compare_all_button.click()
+
+    assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 50
+
+
 def test_renaming_projection_profile_persists_the_new_name(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     saved = {}
