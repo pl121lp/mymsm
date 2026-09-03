@@ -3,12 +3,19 @@ from decimal import Decimal
 
 import pytest
 from PySide6.QtCore import QEvent, QItemSelectionModel, QPointF, Qt
-from PySide6.QtGui import QMouseEvent
-from PySide6.QtWidgets import QAbstractItemView, QDialog, QMessageBox, QPushButton, QTableView
+from PySide6.QtGui import QKeyEvent, QMouseEvent
+from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QDialog,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QTableView,
+)
 
 import app_settings
 import theme
-from main_window import SETTINGS_KEY_DARK_MODE, SETTINGS_KEY_SEK_RATE, MainWindow
+from main_window import ACCOUNTS_TAB, SETTINGS_KEY_DARK_MODE, SETTINGS_KEY_SEK_RATE, MainWindow
 
 
 def test_summary_labels_are_mouse_selectable_for_copying(qapp, conn):
@@ -1698,6 +1705,41 @@ def test_ctrl_z_shortcut_is_wired_to_on_undo(qapp, conn):
 
     assert window.statusBar().currentMessage() == "Nothing to undo."
     window.close()
+
+
+def test_ctrl_r_shortcut_switches_to_reports_tab(qapp, conn):
+    from PySide6.QtTest import QTest
+
+    window = MainWindow(conn)
+    window.show()
+    QTest.qWaitForWindowExposed(window)
+
+    QTest.keyClick(window, Qt.Key_R, Qt.ControlModifier)
+
+    assert window.tabs.currentWidget() is window.reports_pane
+    window.close()
+
+
+def test_ctrl_a_switches_to_accounts_tab(qapp, conn):
+    window = MainWindow(conn)
+    window.tabs.setCurrentWidget(window.reports_pane)
+    window.focusWidget = lambda: None
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.ControlModifier)
+
+    window.eventFilter(window, event)
+
+    assert window.tabs.currentIndex() == ACCOUNTS_TAB
+
+
+def test_ctrl_a_does_not_switch_tabs_while_a_text_field_has_focus(qapp, conn):
+    window = MainWindow(conn)
+    window.tabs.setCurrentWidget(window.reports_pane)
+    window.focusWidget = lambda: QLineEdit(window)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_A, Qt.ControlModifier)
+
+    window.eventFilter(window, event)
+
+    assert window.tabs.currentWidget() is window.reports_pane
 
 
 def test_amortization_checkbox_disabled_for_non_loan_account(qapp, loan_conn):

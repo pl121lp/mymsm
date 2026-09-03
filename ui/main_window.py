@@ -17,13 +17,16 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMessageBox,
+    QPlainTextEdit,
     QPushButton,
     QSplitter,
     QStackedWidget,
     QTabWidget,
     QTableView,
+    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -246,6 +249,8 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.reports_pane, "Reports")
         self.tabs.currentChanged.connect(self._on_tab_changed)
         self.setCentralWidget(self.tabs)
+
+        QShortcut(QKeySequence("Ctrl+R"), self, activated=lambda: self.tabs.setCurrentWidget(self.reports_pane))
 
         self.dark_mode_checkbox = QCheckBox("Dark Mode")
         self.dark_mode_checkbox.setChecked(dark_mode)
@@ -726,6 +731,14 @@ class MainWindow(QMainWindow):
     def eventFilter(self, obj, event):
         if event.type() == QEvent.MouseButtonPress and event.button() == Qt.BackButton:
             self._go_back()
+            return True
+        if (
+            event.type() == QEvent.KeyPress
+            and event.key() == Qt.Key_A
+            and event.modifiers() == Qt.ControlModifier
+            and not isinstance(self.focusWidget(), (QLineEdit, QTextEdit, QPlainTextEdit))
+        ):
+            self.tabs.setCurrentIndex(ACCOUNTS_TAB)
             return True
         return super().eventFilter(obj, event)
 
