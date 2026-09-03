@@ -1083,24 +1083,36 @@ class ReportsPane(QWidget):
         of scope for now."""
         values = self.projection_controls.values()
         rows, assets_by_year = self._projection_rows_with_assets(values)
-        table_rows = [
-            (
-                row.year,
-                row.age,
-                row.retired,
-                row.income,
-                row.social_security,
-                row.tax,
-                row.spending - row.medical_cost,
-                row.medical_cost,
-                row.spending,
-                row.net_cash_flow,
-                assets_by_year[row.year],
-                row.net_worth,
-                assets_by_year[row.year] + row.net_worth,
+        table_rows = []
+        prior_net_worth = None
+        for row in rows:
+            # Year 0 is a snapshot (no cash flow or growth applied yet -- see
+            # projection.compute_projection), so both are zero there.
+            if prior_net_worth is None:
+                investment_income = Decimal("0")
+                net_change = Decimal("0")
+            else:
+                net_change = row.net_worth - prior_net_worth
+                investment_income = net_change - row.net_cash_flow
+            table_rows.append(
+                (
+                    row.year,
+                    row.age,
+                    row.retired,
+                    row.income,
+                    row.social_security,
+                    row.tax,
+                    row.spending - row.medical_cost,
+                    row.medical_cost,
+                    row.spending,
+                    investment_income,
+                    net_change,
+                    assets_by_year[row.year],
+                    row.net_worth,
+                    assets_by_year[row.year] + row.net_worth,
+                )
             )
-            for row in rows
-        ]
+            prior_net_worth = row.net_worth
         self.projection_table_model.set_rows(table_rows)
 
     def _render_projection_compare_chart(self):

@@ -1619,6 +1619,43 @@ def test_unchecking_table_view_restores_the_chart(qapp, dict_conn, monkeypatch):
     assert not pane.projection_table_view.isVisible()
 
 
+def test_investment_income_column_isolates_growth_and_net_cash_flow_is_the_total_change(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(10.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.include_rsu_vesting_checkbox.setChecked(False)
+    controls.include_college_tuition_checkbox.setChecked(False)
+    controls.include_house_sale_checkbox.setChecked(False)
+    controls.include_inheritance_checkbox.setChecked(False)
+    controls.update_button.click()
+    controls.table_view_checkbox.click()
+
+    def cell(row, col):
+        return float(_table_cell(pane.projection_table_view, row, col).replace(",", ""))
+
+    # With no income/spending/lump sums, net worth only moves via 10% growth,
+    # so Net Cash Flow (the total year-over-year change) should equal
+    # Investment Income exactly, and match 10% of the prior year's total.
+    row0_net_worth = cell(0, 13)
+    row1_investment_income = cell(1, 9)
+    row1_net_cash_flow = cell(1, 10)
+    row1_net_worth = cell(1, 13)
+
+    assert row1_net_cash_flow == pytest.approx(row1_net_worth - row0_net_worth)
+    assert row1_investment_income == pytest.approx(row1_net_cash_flow)
+    assert row1_investment_income == pytest.approx(row0_net_worth * 0.10)
+
+
 def test_projection_table_reflects_active_profile_even_in_compare_mode(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(
         reports_tab,
