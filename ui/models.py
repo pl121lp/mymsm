@@ -882,6 +882,64 @@ class RsuVestingForecastTableModel(QAbstractTableModel):
         return None
 
 
+class ProjectionTableModel(QAbstractTableModel):
+    COLUMNS = [
+        "Year", "Age", "Retired", "Income (USD)", "Social Security (USD)", "Tax (USD)",
+        "Spending (USD)", "Net Cash Flow (USD)", "Assets (USD)", "Investments (USD)",
+        "Total Net Worth (USD)",
+    ]
+
+    def __init__(self, rows=None, parent=None):
+        super().__init__(parent)
+        self._rows = rows or []
+
+    def set_rows(self, rows):
+        self.beginResetModel()
+        self._rows = rows
+        self.endResetModel()
+
+    def rowCount(self, parent=None):
+        return len(self._rows)
+
+    def columnCount(self, parent=None):
+        return len(self.COLUMNS)
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.DisplayRole and orientation == Qt.Horizontal:
+            return self.COLUMNS[section]
+        return None
+
+    def data(self, index, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        (
+            year, age, retired, income, social_security, tax, spending, net_cash_flow,
+            assets, investments, total_net_worth,
+        ) = self._rows[index.row()]
+        column = index.column()
+        if column == 0:
+            return str(year)
+        if column == 1:
+            return str(age)
+        if column == 2:
+            return "Yes" if retired else "No"
+        if column == 3:
+            return format_currency(income)
+        if column == 4:
+            return format_currency(social_security)
+        if column == 5:
+            return format_currency(tax)
+        if column == 6:
+            return format_currency(spending)
+        if column == 7:
+            return format_currency(net_cash_flow)
+        if column == 8:
+            return format_currency(assets)
+        if column == 9:
+            return format_currency(investments)
+        return format_currency(total_net_worth)
+
+
 class AccountTableModel(QAbstractTableModel):
     COLUMNS = ["Name", "Type", "Currency", "Balance"]
 

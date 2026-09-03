@@ -1592,6 +1592,77 @@ def test_toggling_compare_mode_saves_unsaved_edits_to_active_profile_first(
     assert saved["profiles"][DEFAULT_PROFILE_NAME]["retirement_age"] == 50
 
 
+def test_checking_table_view_swaps_chart_for_a_table_of_the_yearly_rows(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    pane.projection_controls.table_view_checkbox.click()
+
+    assert not pane.chart_view.isVisible()
+    assert pane.projection_table_view.isVisible()
+    assert pane.projection_table_model.rowCount() > 0
+    assert _table_cell(pane.projection_table_view, 0, 0) == str(date.today().year)
+
+
+def test_unchecking_table_view_restores_the_chart(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    pane.projection_controls.table_view_checkbox.click()
+    pane.projection_controls.table_view_checkbox.click()
+
+    assert pane.chart_view.isVisible()
+    assert not pane.projection_table_view.isVisible()
+
+
+def test_projection_table_reflects_active_profile_even_in_compare_mode(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(
+        reports_tab,
+        "load_projection_profiles",
+        lambda: (
+            DEFAULT_PROFILE_NAME,
+            {DEFAULT_PROFILE_NAME: {}, "Retire Early": {"retirement_age": 50}},
+        ),
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    pane.projection_controls.compare_all_button.click()
+    pane.projection_controls.table_view_checkbox.click()
+
+    assert pane.projection_table_view.isVisible()
+    assert pane.projection_table_model.rowCount() > 0
+
+
+def test_selecting_other_report_after_table_view_hides_the_projection_table(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+    pane.projection_controls.table_view_checkbox.click()
+
+    _select_net_worth_report(pane)
+
+    assert not pane.projection_table_view.isVisible()
+
+
+def test_updating_projection_refreshes_the_table_while_it_is_hidden(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.show()
+    _select_projection_report(pane)
+
+    pane.projection_controls.retirement_age_spinbox.setValue(50)
+    pane.projection_controls.update_button.click()
+
+    assert pane.projection_table_model.rowCount() > 0
+
+
 def test_renaming_projection_profile_persists_the_new_name(qapp, dict_conn, monkeypatch):
     monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
     saved = {}

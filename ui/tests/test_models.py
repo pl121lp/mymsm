@@ -11,6 +11,7 @@ from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
+    ProjectionTableModel,
     RecurringSubscriptionsTableModel,
     RsuVestingForecastTableModel,
     SearchResultTableModel,
@@ -1631,6 +1632,58 @@ def test_rsu_vesting_forecast_model_bolds_total_rows():
     )
     index = model.index(0, 2)
     assert model.data(index, Qt.FontRole).bold()
+
+
+def test_projection_table_model_columns_and_formatting():
+    model = ProjectionTableModel(
+        [
+            (
+                2026, 45, False, Decimal("80000.00"), Decimal("0.00"), Decimal("16000.00"),
+                Decimal("60000.00"), Decimal("4000.00"), Decimal("300000.00"), Decimal("426.30"),
+                Decimal("300426.30"),
+            )
+        ]
+    )
+    assert model.rowCount() == 1
+    assert model.columnCount() == 11
+    assert _data(model, 0, 0) == "2026"
+    assert _data(model, 0, 1) == "45"
+    assert _data(model, 0, 2) == "No"
+    assert _data(model, 0, 3) == "80,000.00"
+    assert _data(model, 0, 4) == "0.00"
+    assert _data(model, 0, 5) == "16,000.00"
+    assert _data(model, 0, 6) == "60,000.00"
+    assert _data(model, 0, 7) == "4,000.00"
+    assert _data(model, 0, 8) == "300,000.00"
+    assert _data(model, 0, 9) == "426.30"
+    assert _data(model, 0, 10) == "300,426.30"
+
+
+def test_projection_table_model_shows_retired_as_yes():
+    model = ProjectionTableModel(
+        [
+            (
+                2050, 70, True, Decimal("0"), Decimal("20000.00"), Decimal("4000.00"),
+                Decimal("50000.00"), Decimal("-34000.00"), Decimal("0"), Decimal("500000.00"),
+                Decimal("500000.00"),
+            )
+        ]
+    )
+    assert _data(model, 0, 2) == "Yes"
+
+
+def test_projection_table_model_set_rows_replaces_contents():
+    model = ProjectionTableModel()
+    assert model.rowCount() == 0
+    model.set_rows(
+        [
+            (
+                2026, 45, False, Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
+                Decimal("0"), Decimal("0"), Decimal("0"),
+            )
+        ]
+    )
+    assert model.rowCount() == 1
 
 
 def test_compute_rsu_vesting_cumulative_series_accumulates_shares_and_value():

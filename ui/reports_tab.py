@@ -45,6 +45,7 @@ from models import (
     DictionaryListModel,
     IncomeByCategoryTableModel,
     InvestmentAnalysisTableModel,
+    ProjectionTableModel,
     RecurringSubscriptionsTableModel,
     RsuVestingForecastTableModel,
     SpendingByCategoryTableModel,
@@ -195,6 +196,14 @@ class ReportsPane(QWidget):
         self.projection_controls.profile_renamed.connect(self._on_projection_profile_renamed)
         self.projection_controls.profile_added.connect(self._on_projection_profile_added)
         self.projection_controls.compare_mode_toggled.connect(self._on_projection_compare_mode_toggled)
+        self.projection_controls.table_view_toggled.connect(self._on_projection_table_view_toggled)
+
+        self.projection_table_model = ProjectionTableModel()
+        self.projection_table_view = QTableView()
+        self.projection_table_view.setModel(self.projection_table_model)
+        self.projection_table_view.horizontalHeader().setStretchLastSection(True)
+        self.projection_table_view.setVisible(False)
+        enable_cell_copy(self.projection_table_view)
 
         # Wrapped in a scroll area so the (tall) controls panel scrolls
         # internally instead of pushing the chart down; Ignored vertical size
@@ -343,6 +352,7 @@ class ReportsPane(QWidget):
         chart_layout.setContentsMargins(0, 0, 0, 0)
         chart_layout.addWidget(self.net_worth_status_row)
         chart_layout.addWidget(self.chart_view, 1)
+        chart_layout.addWidget(self.projection_table_view, 1)
         chart_layout.addWidget(self.category_table_view)
         chart_layout.addWidget(self.investment_table_view)
         chart_layout.addWidget(self.assets_investments_table_view)
@@ -381,6 +391,8 @@ class ReportsPane(QWidget):
             self.assets_investments_table_model.set_rows([])
             self.recurring_table_model.set_recurring([])
             self.rsu_vesting_forecast_table_model.set_rows([])
+            self.projection_table_model.set_rows([])
+            self.projection_table_view.setVisible(False)
             self.recurring_status_row.setVisible(False)
             self.assets_investments_bar_chart_view.setChart(_empty_chart())
             self.assets_investments_bar_chart_view.setVisible(False)
@@ -423,10 +435,14 @@ class ReportsPane(QWidget):
             self.view_selector.addItems(["Table", "Chart"])
             self.view_selector.setCurrentIndex(0)
             self.view_selector.blockSignals(False)
-        self.chart_view.setVisible(
-            report_id
-            in (NET_WORTH_REPORT_ID, NET_WORTH_PROJECTION_REPORT_ID, COLLEGE_TUITION_PROJECTION_REPORT_ID)
+        projection_table_view_active = (
+            is_projection_report and self.projection_controls.table_view_checkbox.isChecked()
         )
+        self.chart_view.setVisible(
+            report_id in (NET_WORTH_REPORT_ID, COLLEGE_TUITION_PROJECTION_REPORT_ID)
+            or (is_projection_report and not projection_table_view_active)
+        )
+        self.projection_table_view.setVisible(projection_table_view_active)
         self.category_table_view.setVisible(is_category_report)
         self.investment_table_view.setVisible(is_investment_report)
         self.investment_controls_row.setVisible(is_investment_report)
@@ -862,7 +878,7 @@ class ReportsPane(QWidget):
         values.update(profiles[active_profile])
         values["starting_investment_value"] = float(starting_value)
         self.projection_controls.set_values(values)
-        self._render_projection_chart()
+        self._render_projection_view()
 
     def _current_projection_profile_values(self):
         values = self.projection_controls.values()
@@ -874,7 +890,7 @@ class ReportsPane(QWidget):
 
     def _on_projection_updated(self):
         self._save_current_projection_profile()
-        self._render_projection_chart()
+        self._render_projection_view()
 
     def _on_projection_profile_selected(self, name):
         if name == self._active_projection_profile:
@@ -887,7 +903,7 @@ class ReportsPane(QWidget):
         values["starting_investment_value"] = starting_investment_value
         self.projection_controls.set_values(values)
         save_projection_profiles(self._projection_profiles, self._active_projection_profile)
-        self._render_projection_chart()
+        self._render_projection_view()
 
     def _on_projection_profile_renamed(self, old_name, new_name):
         self._projection_profiles[new_name] = self._projection_profiles.pop(
@@ -1026,33 +1042,64 @@ class ReportsPane(QWidget):
         gain = max(house_sale_value - purchase_price, Decimal("0"))
         return house_sale_value - gain * tax_rate
 
-    def _render_projection_chart(self):
-        if self._projection_compare_mode:
-            self._render_projection_compare_chart()
-            return
-        values = self.projection_controls.values()
+    def _projection_rows_with_assets(self, values):
+        """Per-year projection rows plus a parallel {year: assets_band_value}
+        map -- the same Assets figure the chart's stacked band uses (it steps
+        down by the house's value in the house-sale year), kept separate from
+        YearlyProjection.net_worth so the table can show them as distinct
+        columns."""
         house_sale_value = self._projection_house_sale_value(values)
         house_sale_proceeds = self._projection_house_sale_proceeds(values, house_sale_value)
         rows = self._compute_projection_rows(values, house_sale_proceeds)
         assets_total = sum(self._projection_asset_values.values(), start=Decimal("0"))
         assets_total_after_house_sale = assets_total - house_sale_value
         house_sale_year = values["house_sale_year"]
+        assets_by_year = {
+            row.year: (assets_total_after_house_sale if row.year >= house_sale_year else assets_total)
+            for row in rows
+        }
+        return rows, assets_by_year
+
+    def _render_projection_view(self):
+        self._render_projection_chart()
+        self._render_projection_table()
+
+    def _render_projection_chart(self):
+        if self._projection_compare_mode:
+            self._render_projection_compare_chart()
+            return
+        values = self.projection_controls.values()
+        rows, assets_by_year = self._projection_rows_with_assets(values)
         bands = [
-            (
-                "Assets",
-                [
-                    (
-                        date(row.year, 1, 1),
-                        assets_total_after_house_sale if row.year >= house_sale_year else assets_total,
-                    )
-                    for row in rows
-                ],
-                "#ADD8E6",
-            ),
+            ("Assets", [(date(row.year, 1, 1), assets_by_year[row.year]) for row in rows], "#ADD8E6"),
             ("Investments", [(date(row.year, 1, 1), row.net_worth) for row in rows], "#FFCC80"),
         ]
         chart = build_stacked_area_chart("Net Worth Projection (USD)", bands, mark_zero=True)
         self.chart_view.setChart(chart)
+
+    def _render_projection_table(self):
+        """Always reflects the active profile, independent of Compare mode
+        -- a compare-mode table would need per-profile columns, which is out
+        of scope for now."""
+        values = self.projection_controls.values()
+        rows, assets_by_year = self._projection_rows_with_assets(values)
+        table_rows = [
+            (
+                row.year,
+                row.age,
+                row.retired,
+                row.income,
+                row.social_security,
+                row.tax,
+                row.spending,
+                row.net_cash_flow,
+                assets_by_year[row.year],
+                row.net_worth,
+                assets_by_year[row.year] + row.net_worth,
+            )
+            for row in rows
+        ]
+        self.projection_table_model.set_rows(table_rows)
 
     def _render_projection_compare_chart(self):
         starting_investment_value = self.projection_controls.values()["starting_investment_value"]
@@ -1072,7 +1119,13 @@ class ReportsPane(QWidget):
         self._projection_compare_mode = enabled
         if enabled:
             self._save_current_projection_profile()
-        self._render_projection_chart()
+        self._render_projection_view()
+
+    def _on_projection_table_view_toggled(self, enabled):
+        self.chart_view.setVisible(not enabled)
+        self.projection_table_view.setVisible(enabled)
+        if enabled:
+            self._render_projection_table()
 
     def _load_college_tuition_report(self):
         try:
