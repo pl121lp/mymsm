@@ -233,12 +233,15 @@ def test_medical_costs_apply_only_between_retirement_and_medicare_age():
     assert by_year[2025].retired is True
     assert by_year[2025].age == 65
     assert by_year[2025].spending == Decimal("1000")
+    assert by_year[2025].medical_cost == Decimal("1000")
 
     assert by_year[2026].age == 66
     assert by_year[2026].spending == Decimal("1000")
+    assert by_year[2026].medical_cost == Decimal("1000")
 
     assert by_year[2027].age == 67
     assert by_year[2027].spending == Decimal("0")
+    assert by_year[2027].medical_cost == Decimal("0")
 
 
 def test_withdrawal_tax_grosses_up_retirement_shortfall():

@@ -885,8 +885,8 @@ class RsuVestingForecastTableModel(QAbstractTableModel):
 class ProjectionTableModel(QAbstractTableModel):
     COLUMNS = [
         "Year", "Age", "Retired", "Income (USD)", "Social Security (USD)", "Tax (USD)",
-        "Spending (USD)", "Net Cash Flow (USD)", "Assets (USD)", "Investments (USD)",
-        "Total Net Worth (USD)",
+        "Base Spending (USD)", "Medical Costs (USD)", "Total Spending (USD)",
+        "Net Cash Flow (USD)", "Assets (USD)", "Investments (USD)", "Total Net Worth (USD)",
     ]
 
     def __init__(self, rows=None, parent=None):
@@ -913,8 +913,8 @@ class ProjectionTableModel(QAbstractTableModel):
         if role != Qt.DisplayRole:
             return None
         (
-            year, age, retired, income, social_security, tax, spending, net_cash_flow,
-            assets, investments, total_net_worth,
+            year, age, retired, income, social_security, tax, base_spending, medical_cost,
+            total_spending, net_cash_flow, assets, investments, total_net_worth,
         ) = self._rows[index.row()]
         column = index.column()
         if column == 0:
@@ -930,12 +930,16 @@ class ProjectionTableModel(QAbstractTableModel):
         if column == 5:
             return format_currency(tax)
         if column == 6:
-            return format_currency(spending)
+            return format_currency(base_spending)
         if column == 7:
-            return format_currency(net_cash_flow)
+            return format_currency(medical_cost)
         if column == 8:
-            return format_currency(assets)
+            return format_currency(total_spending)
         if column == 9:
+            return format_currency(net_cash_flow)
+        if column == 10:
+            return format_currency(assets)
+        if column == 11:
             return format_currency(investments)
         return format_currency(total_net_worth)
 

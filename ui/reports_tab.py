@@ -1091,6 +1091,8 @@ class ReportsPane(QWidget):
                 row.income,
                 row.social_security,
                 row.tax,
+                row.spending - row.medical_cost,
+                row.medical_cost,
                 row.spending,
                 row.net_cash_flow,
                 assets_by_year[row.year],

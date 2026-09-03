@@ -44,6 +44,7 @@ class YearlyProjection(NamedTuple):
     social_security: Decimal
     tax: Decimal
     spending: Decimal
+    medical_cost: Decimal
     net_cash_flow: Decimal
     net_worth: Decimal
 
@@ -98,6 +99,7 @@ def compute_projection(
             social_security=zero,
             tax=zero,
             spending=zero,
+            medical_cost=zero,
             net_cash_flow=zero,
             net_worth=inputs.starting_investment_value,
         )
@@ -157,6 +159,7 @@ def compute_projection(
                 social_security=social_security,
                 tax=tax,
                 spending=spending,
+                medical_cost=medical,
                 net_cash_flow=net_cash_flow,
                 net_worth=net_worth,
             )

@@ -1639,24 +1639,26 @@ def test_projection_table_model_columns_and_formatting():
         [
             (
                 2026, 45, False, Decimal("80000.00"), Decimal("0.00"), Decimal("16000.00"),
-                Decimal("60000.00"), Decimal("4000.00"), Decimal("300000.00"), Decimal("426.30"),
-                Decimal("300426.30"),
+                Decimal("56000.00"), Decimal("4000.00"), Decimal("60000.00"), Decimal("4000.00"),
+                Decimal("300000.00"), Decimal("426.30"), Decimal("300426.30"),
             )
         ]
     )
     assert model.rowCount() == 1
-    assert model.columnCount() == 11
+    assert model.columnCount() == 13
     assert _data(model, 0, 0) == "2026"
     assert _data(model, 0, 1) == "45"
     assert _data(model, 0, 2) == "No"
     assert _data(model, 0, 3) == "80,000.00"
     assert _data(model, 0, 4) == "0.00"
     assert _data(model, 0, 5) == "16,000.00"
-    assert _data(model, 0, 6) == "60,000.00"
+    assert _data(model, 0, 6) == "56,000.00"
     assert _data(model, 0, 7) == "4,000.00"
-    assert _data(model, 0, 8) == "300,000.00"
-    assert _data(model, 0, 9) == "426.30"
-    assert _data(model, 0, 10) == "300,426.30"
+    assert _data(model, 0, 8) == "60,000.00"
+    assert _data(model, 0, 9) == "4,000.00"
+    assert _data(model, 0, 10) == "300,000.00"
+    assert _data(model, 0, 11) == "426.30"
+    assert _data(model, 0, 12) == "300,426.30"
 
 
 def test_projection_table_model_shows_retired_as_yes():
@@ -1664,8 +1666,8 @@ def test_projection_table_model_shows_retired_as_yes():
         [
             (
                 2050, 70, True, Decimal("0"), Decimal("20000.00"), Decimal("4000.00"),
-                Decimal("50000.00"), Decimal("-34000.00"), Decimal("0"), Decimal("500000.00"),
-                Decimal("500000.00"),
+                Decimal("49000.00"), Decimal("1000.00"), Decimal("50000.00"), Decimal("-34000.00"),
+                Decimal("0"), Decimal("500000.00"), Decimal("500000.00"),
             )
         ]
     )
@@ -1679,7 +1681,7 @@ def test_projection_table_model_set_rows_replaces_contents():
         [
             (
                 2026, 45, False, Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
-                Decimal("0"), Decimal("0"), Decimal("0"),
+                Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"), Decimal("0"),
             )
         ]
     )
