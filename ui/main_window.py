@@ -740,6 +740,14 @@ class MainWindow(QMainWindow):
         ):
             self.tabs.setCurrentIndex(ACCOUNTS_TAB)
             return True
+        if (
+            event.type() == QEvent.KeyPress
+            and event.modifiers() == Qt.ControlModifier
+            and Qt.Key_1 <= event.key() <= Qt.Key_9
+            and self.tabs.currentWidget() is self.reports_pane
+        ):
+            self.reports_pane.select_report_by_number(event.key() - Qt.Key_0)
+            return True
         return super().eventFilter(obj, event)
 
     def _capture_view(self):

@@ -1742,6 +1742,29 @@ def test_ctrl_a_does_not_switch_tabs_while_a_text_field_has_focus(qapp, conn):
     assert window.tabs.currentWidget() is window.reports_pane
 
 
+def test_ctrl_number_selects_report_when_reports_tab_is_active(qapp, conn):
+    from reports_tab import NET_WORTH_PROJECTION_REPORT_ID
+
+    window = MainWindow(conn)
+    window.tabs.setCurrentWidget(window.reports_pane)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_5, Qt.ControlModifier)
+
+    window.eventFilter(window, event)
+
+    assert window.reports_pane._active_report_id == NET_WORTH_PROJECTION_REPORT_ID
+
+
+def test_ctrl_number_does_nothing_outside_the_reports_tab(qapp, conn):
+    window = MainWindow(conn)
+    window.tabs.setCurrentIndex(ACCOUNTS_TAB)
+    event = QKeyEvent(QEvent.KeyPress, Qt.Key_5, Qt.ControlModifier)
+
+    handled = window.eventFilter(window, event)
+
+    assert not handled
+    assert window.reports_pane._active_report_id is None
+
+
 def test_amortization_checkbox_disabled_for_non_loan_account(qapp, loan_conn):
     window = MainWindow(loan_conn)
     row = next(

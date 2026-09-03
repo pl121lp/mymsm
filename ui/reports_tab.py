@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from functools import partial
 
-from PySide6.QtCore import QDate, Qt, QTimer
+from PySide6.QtCore import QDate, QItemSelectionModel, Qt, QTimer
 from PySide6.QtGui import QPainter
 from PySide6.QtWidgets import (
     QAbstractItemView,
@@ -84,15 +84,15 @@ ASSETS_AND_INVESTMENTS_REPORT_ID = "assets_and_investments"
 RECURRING_SUBSCRIPTIONS_REPORT_ID = "recurring_subscriptions"
 RSU_VESTING_FORECAST_REPORT_ID = "rsu_vesting_forecast"
 REPORTS = [
-    (NET_WORTH_REPORT_ID, "Net worth over time"),
-    (SPENDING_BY_CATEGORY_REPORT_ID, "Spending by category"),
-    (INCOME_BY_CATEGORY_REPORT_ID, "Income by category"),
-    (INVESTMENT_ANALYSIS_REPORT_ID, "Investment analysis"),
-    (NET_WORTH_PROJECTION_REPORT_ID, "Net Worth Projection"),
-    (COLLEGE_TUITION_PROJECTION_REPORT_ID, "College Tuition Projection"),
-    (ASSETS_AND_INVESTMENTS_REPORT_ID, "Assets and investments"),
-    (RECURRING_SUBSCRIPTIONS_REPORT_ID, "Recurring / Subscriptions"),
-    (RSU_VESTING_FORECAST_REPORT_ID, "RSU Vesting Forecast"),
+    (NET_WORTH_REPORT_ID, "1. Net worth over time"),
+    (SPENDING_BY_CATEGORY_REPORT_ID, "2. Spending by category"),
+    (INCOME_BY_CATEGORY_REPORT_ID, "3. Income by category"),
+    (INVESTMENT_ANALYSIS_REPORT_ID, "4. Investment analysis"),
+    (NET_WORTH_PROJECTION_REPORT_ID, "5. Net Worth Projection"),
+    (COLLEGE_TUITION_PROJECTION_REPORT_ID, "6. College Tuition Projection"),
+    (ASSETS_AND_INVESTMENTS_REPORT_ID, "7. Assets and investments"),
+    (RECURRING_SUBSCRIPTIONS_REPORT_ID, "8. Recurring / Subscriptions"),
+    (RSU_VESTING_FORECAST_REPORT_ID, "9. RSU Vesting Forecast"),
 ]
 
 
@@ -467,6 +467,14 @@ class ReportsPane(QWidget):
             self._load_recurring_report()
         elif is_rsu_vesting_report:
             self._load_rsu_vesting_forecast_report()
+
+    def select_report_by_number(self, number):
+        """number: 1-based position in REPORTS, matching its numbered prefix."""
+        row = number - 1
+        if 0 <= row < self.list_model.rowCount():
+            self.list_view.selectionModel().select(
+                self.list_model.index(row, 0), QItemSelectionModel.ClearAndSelect
+            )
 
     def _on_view_mode_changed(self):
         if self._active_report_id in self._category_reports:

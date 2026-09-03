@@ -121,27 +121,44 @@ def test_reports_list_view_supports_copy(qapp, dict_conn):
 def test_reports_list_shows_net_worth_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
-    assert pane.list_model.data(pane.list_model.index(0, 0)) == "Net worth over time"
+    assert pane.list_model.data(pane.list_model.index(0, 0)) == "1. Net worth over time"
 
 
 def test_reports_list_shows_spending_by_category_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
-    assert pane.list_model.data(pane.list_model.index(1, 0)) == "Spending by category"
+    assert pane.list_model.data(pane.list_model.index(1, 0)) == "2. Spending by category"
 
 
 def test_reports_list_shows_income_by_category_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
-    assert pane.list_model.data(pane.list_model.index(2, 0)) == "Income by category"
+    assert pane.list_model.data(pane.list_model.index(2, 0)) == "3. Income by category"
 
 
 def test_reports_list_shows_investment_analysis_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
-    assert pane.list_model.data(pane.list_model.index(3, 0)) == "Investment analysis"
+    assert pane.list_model.data(pane.list_model.index(3, 0)) == "4. Investment analysis"
 
 
 def test_reports_list_shows_recurring_subscriptions_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
-    assert pane.list_model.data(pane.list_model.index(7, 0)) == "Recurring / Subscriptions"
+    assert pane.list_model.data(pane.list_model.index(7, 0)) == "8. Recurring / Subscriptions"
+
+
+def test_select_report_by_number_selects_the_matching_report(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+
+    pane.select_report_by_number(5)
+
+    assert pane._active_report_id == reports_tab.NET_WORTH_PROJECTION_REPORT_ID
+
+
+def test_select_report_by_number_ignores_out_of_range_numbers(qapp, dict_conn):
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    pane.select_report_by_number(1)
+
+    pane.select_report_by_number(len(REPORTS) + 1)
+
+    assert pane._active_report_id == reports_tab.NET_WORTH_REPORT_ID
 
 
 def test_empty_chart_panel_uses_dark_theme_when_dark_mode_is_active(qapp, dict_conn):
@@ -955,7 +972,7 @@ def _select_projection_report(pane):
 def test_reports_list_shows_net_worth_projection_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
-    assert pane.list_model.data(pane.list_model.index(4, 0)) == "Net Worth Projection"
+    assert pane.list_model.data(pane.list_model.index(4, 0)) == "5. Net Worth Projection"
 
 
 def test_selecting_projection_report_shows_controls_and_chart_hides_others(qapp, dict_conn):
@@ -1619,7 +1636,7 @@ def test_adding_projection_profile_seeds_from_current_and_switches(qapp, dict_co
 def test_reports_list_shows_college_tuition_projection_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
-    assert pane.list_model.data(pane.list_model.index(5, 0)) == "College Tuition Projection"
+    assert pane.list_model.data(pane.list_model.index(5, 0)) == "6. College Tuition Projection"
 
 
 def test_selecting_college_tuition_report_shows_controls_and_chart_hides_others(qapp, dict_conn):
@@ -1784,7 +1801,7 @@ def _add_asset_and_loan_accounts(conn):
 def test_reports_list_shows_assets_and_investments_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
-    assert pane.list_model.data(pane.list_model.index(6, 0)) == "Assets and investments"
+    assert pane.list_model.data(pane.list_model.index(6, 0)) == "7. Assets and investments"
 
 
 def test_selecting_assets_and_investments_report_shows_table_hides_others(qapp, dict_conn):
@@ -1955,7 +1972,7 @@ def _add_future_vest(conn):
 def test_reports_list_shows_rsu_vesting_forecast_report(qapp, dict_conn):
     pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
     assert pane.list_model.rowCount() == len(REPORTS)
-    assert pane.list_model.data(pane.list_model.index(8, 0)) == "RSU Vesting Forecast"
+    assert pane.list_model.data(pane.list_model.index(8, 0)) == "9. RSU Vesting Forecast"
 
 
 def test_selecting_rsu_vesting_forecast_report_shows_table_hides_others(qapp, dict_conn):
