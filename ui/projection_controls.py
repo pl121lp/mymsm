@@ -7,6 +7,7 @@ inputs, laid out in labeled sections with an Update button.
 from datetime import date
 
 from PySide6.QtCore import Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -135,6 +136,7 @@ class ProjectionControlsPanel(QWidget):
 
         self.update_button = QPushButton("Update")
         self.update_button.clicked.connect(self.updated.emit)
+        QShortcut(QKeySequence("Ctrl+U"), self, activated=self.updated.emit)
 
         layout = QVBoxLayout(self)
 
