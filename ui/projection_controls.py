@@ -45,6 +45,8 @@ def default_projection_values(today=None):
         "social_security_annual_amount_2": 0.0,
         "social_security_start_year_2": today.year + 27,
         "house_sale_year": today.year + 20,
+        "house_purchase_price": 0.0,
+        "house_sale_tax_rate": 0.0,
         "inheritance_amount": 0.0,
         "inheritance_year": today.year + 20,
         "medical_cost_after_retirement": 0.0,
@@ -121,6 +123,8 @@ class ProjectionControlsPanel(QWidget):
         self.house_account_combo = QComboBox()
         self.house_account_combo.addItem("None", None)
         self.house_sale_year_spinbox = year_spinbox(defaults["house_sale_year"])
+        self.house_purchase_price_spinbox = dollar_spinbox(defaults["house_purchase_price"])
+        self.house_sale_tax_rate_spinbox = percent_spinbox(defaults["house_sale_tax_rate"])
 
         self.inheritance_amount_spinbox = dollar_spinbox(defaults["inheritance_amount"])
         self.inheritance_year_spinbox = year_spinbox(defaults["inheritance_year"])
@@ -179,6 +183,8 @@ class ProjectionControlsPanel(QWidget):
         house_form = QFormLayout()
         house_form.addRow("House account:", self.house_account_combo)
         house_form.addRow("House sale year:", self.house_sale_year_spinbox)
+        house_form.addRow("Purchase price:", self.house_purchase_price_spinbox)
+        house_form.addRow("House sale tax rate:", self.house_sale_tax_rate_spinbox)
 
         inheritance_form = QFormLayout()
         inheritance_form.addRow("Inheritance amount (one-time):", self.inheritance_amount_spinbox)
@@ -290,6 +296,8 @@ class ProjectionControlsPanel(QWidget):
             "social_security_start_year_2": self.social_security_start_year_2_spinbox.value(),
             "house_account_id": self.house_account_combo.currentData(),
             "house_sale_year": self.house_sale_year_spinbox.value(),
+            "house_purchase_price": self.house_purchase_price_spinbox.value(),
+            "house_sale_tax_rate": self.house_sale_tax_rate_spinbox.value(),
             "inheritance_amount": self.inheritance_amount_spinbox.value(),
             "inheritance_year": self.inheritance_year_spinbox.value(),
             "include_rsu_vesting": self.include_rsu_vesting_checkbox.isChecked(),
@@ -319,6 +327,8 @@ class ProjectionControlsPanel(QWidget):
             "social_security_annual_amount_2": self.social_security_amount_2_spinbox,
             "social_security_start_year_2": self.social_security_start_year_2_spinbox,
             "house_sale_year": self.house_sale_year_spinbox,
+            "house_purchase_price": self.house_purchase_price_spinbox,
+            "house_sale_tax_rate": self.house_sale_tax_rate_spinbox,
             "inheritance_amount": self.inheritance_amount_spinbox,
             "inheritance_year": self.inheritance_year_spinbox,
         }

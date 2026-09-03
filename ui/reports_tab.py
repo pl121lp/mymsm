@@ -1012,13 +1012,20 @@ class ReportsPane(QWidget):
             house_sale_value = Decimal("0")
         return house_sale_value
 
+    def _projection_house_sale_proceeds(self, values, house_sale_value):
+        purchase_price = Decimal(str(values.get("house_purchase_price", 0)))
+        tax_rate = Decimal(str(values.get("house_sale_tax_rate", 0))) / Decimal("100")
+        gain = max(house_sale_value - purchase_price, Decimal("0"))
+        return house_sale_value - gain * tax_rate
+
     def _render_projection_chart(self):
         if self._projection_compare_mode:
             self._render_projection_compare_chart()
             return
         values = self.projection_controls.values()
         house_sale_value = self._projection_house_sale_value(values)
-        rows = self._compute_projection_rows(values, house_sale_value)
+        house_sale_proceeds = self._projection_house_sale_proceeds(values, house_sale_value)
+        rows = self._compute_projection_rows(values, house_sale_proceeds)
         assets_total = sum(self._projection_asset_values.values(), start=Decimal("0"))
         assets_total_after_house_sale = assets_total - house_sale_value
         house_sale_year = values["house_sale_year"]
@@ -1047,7 +1054,8 @@ class ReportsPane(QWidget):
             values.update(saved_values)
             values["starting_investment_value"] = starting_investment_value
             house_sale_value = self._projection_house_sale_value(values)
-            rows = self._compute_projection_rows(values, house_sale_value)
+            house_sale_proceeds = self._projection_house_sale_proceeds(values, house_sale_value)
+            rows = self._compute_projection_rows(values, house_sale_proceeds)
             series.append((name, [(date(row.year, 1, 1), row.net_worth) for row in rows]))
         chart = build_line_chart("Net Worth Projection - All Profiles (USD)", series, mark_zero=True)
         self.chart_view.setChart(chart)

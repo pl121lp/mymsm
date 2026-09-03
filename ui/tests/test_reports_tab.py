@@ -1138,6 +1138,66 @@ def test_selecting_house_account_removes_its_value_from_assets_in_the_sale_year(
     assert assets_series.at(1).y() == pytest.approx(0.0)
 
 
+def test_house_sale_tax_is_applied_only_to_the_gain_over_purchase_price(
+    qapp, dict_conn, monkeypatch
+):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.house_account_combo.setCurrentIndex(1)
+    controls.house_sale_year_spinbox.setValue(date.today().year + 1)
+    controls.house_purchase_price_spinbox.setValue(100000.0)
+    controls.house_sale_tax_rate_spinbox.setValue(20.0)
+    controls.update_button.click()
+
+    # Gain is 300000 - 100000 = 200000, taxed at 20% = 40000, so only
+    # 260000 of the house's 300000 value actually lands in Investments.
+    total_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert total_series.at(1).y() == pytest.approx(total_series.at(0).y() - 40000.0)
+
+
+def test_house_sale_tax_does_not_apply_to_a_loss(qapp, dict_conn, monkeypatch):
+    monkeypatch.setattr(reports_tab, "load_projection_profiles", lambda: (DEFAULT_PROFILE_NAME, {}))
+    dict_conn.execute(
+        "INSERT INTO accounts (account_id, name, account_type, is_closed, opening_balance, "
+        "currency, interest_category_id) VALUES (5, 'House', '3', FALSE, 300000.00, 'USD', NULL)"
+    )
+    pane = ReportsPane(dict_conn, report_error=lambda msg: None, to_usd=lambda cur, amt: amt)
+    _select_projection_report(pane)
+
+    controls = pane.projection_controls
+    controls.return_rate_before_spinbox.setValue(0.0)
+    controls.return_rate_after_spinbox.setValue(0.0)
+    controls.annual_income_spinbox.setValue(0.0)
+    controls.spending_before_spinbox.setValue(0.0)
+    controls.spending_after_spinbox.setValue(0.0)
+    controls.social_security_amount_spinbox.setValue(0.0)
+    controls.retirement_age_spinbox.setValue(100)
+    controls.house_account_combo.setCurrentIndex(1)
+    controls.house_sale_year_spinbox.setValue(date.today().year + 1)
+    controls.house_purchase_price_spinbox.setValue(400000.0)
+    controls.house_sale_tax_rate_spinbox.setValue(20.0)
+    controls.update_button.click()
+
+    # House value (300000) is below purchase price (400000): no gain, so
+    # the full house value still lands in Investments untaxed.
+    total_series = pane.chart_view.chart().series()[1].upperSeries()
+    assert total_series.at(1).y() == pytest.approx(total_series.at(0).y())
+
+
 def test_unchecking_include_house_sale_keeps_house_in_assets_and_out_of_cash_flow(
     qapp, dict_conn, monkeypatch
 ):

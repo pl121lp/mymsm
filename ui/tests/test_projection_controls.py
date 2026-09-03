@@ -23,6 +23,8 @@ def test_default_projection_values_are_relative_to_today():
         "social_security_annual_amount_2": 0.0,
         "social_security_start_year_2": 2051,
         "house_sale_year": 2044,
+        "house_purchase_price": 0.0,
+        "house_sale_tax_rate": 0.0,
         "inheritance_amount": 0.0,
         "inheritance_year": 2044,
         "medical_cost_after_retirement": 0.0,
@@ -54,6 +56,8 @@ def test_panel_initializes_widgets_from_defaults(qapp):
     assert panel.social_security_amount_2_spinbox.value() == pytest.approx(0.0)
     assert panel.social_security_start_year_2_spinbox.value() == 2051
     assert panel.house_sale_year_spinbox.value() == 2044
+    assert panel.house_purchase_price_spinbox.value() == pytest.approx(0.0)
+    assert panel.house_sale_tax_rate_spinbox.value() == pytest.approx(0.0)
     assert panel.inheritance_amount_spinbox.value() == pytest.approx(0.0)
     assert panel.inheritance_year_spinbox.value() == 2044
     assert panel.medical_cost_spinbox.value() == pytest.approx(0.0)
@@ -112,6 +116,8 @@ def test_values_and_set_values_round_trip_new_fields(qapp):
     panel.set_values(
         {
             "house_sale_year": 2040,
+            "house_purchase_price": 200000.0,
+            "house_sale_tax_rate": 15.0,
             "inheritance_amount": 25000.0,
             "inheritance_year": 2035,
             "medical_cost_after_retirement": 12000.0,
@@ -122,6 +128,8 @@ def test_values_and_set_values_round_trip_new_fields(qapp):
     values = panel.values()
 
     assert values["house_sale_year"] == 2040
+    assert values["house_purchase_price"] == pytest.approx(200000.0)
+    assert values["house_sale_tax_rate"] == pytest.approx(15.0)
     assert values["inheritance_amount"] == pytest.approx(25000.0)
     assert values["inheritance_year"] == 2035
     assert values["medical_cost_after_retirement"] == pytest.approx(12000.0)
