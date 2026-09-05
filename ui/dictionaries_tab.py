@@ -1,5 +1,7 @@
 """Dictionaries tab: browse categories and investments across all accounts."""
 
+from functools import partial
+
 from PySide6.QtCharts import QChart, QChartView
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPainter
@@ -37,10 +39,11 @@ def _empty_chart():
 
 
 class CategoriesPane(QWidget):
-    def __init__(self, conn, report_error, parent=None):
+    def __init__(self, conn, report_error, on_show_in_accounts=None, parent=None):
         super().__init__(parent)
         self._conn = conn
         self._report_error = report_error
+        self._on_show_in_accounts = on_show_in_accounts
 
         self.list_model = DictionaryListModel()
         self.detail_model = CategoryTransactionTableModel()
@@ -58,7 +61,7 @@ class CategoriesPane(QWidget):
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
         self.detail_view.horizontalHeader().setStretchLastSection(True)
-        enable_cell_copy(self.detail_view)
+        enable_cell_copy(self.detail_view, extra_actions=self._detail_context_actions)
 
         list_pane = QWidget()
         list_layout = QVBoxLayout(list_pane)
@@ -112,12 +115,19 @@ class CategoriesPane(QWidget):
         self.detail_count_label.setText(f"{len(transactions)} records")
         self.detail_view.resizeColumnsToContents()
 
+    def _detail_context_actions(self, row):
+        if self._on_show_in_accounts is None:
+            return []
+        transaction_id = self.detail_model.transaction_at(row)[0]
+        return [("Show in accounts", partial(self._on_show_in_accounts, transaction_id))]
+
 
 class PayeesPane(QWidget):
-    def __init__(self, conn, report_error, parent=None):
+    def __init__(self, conn, report_error, on_show_in_accounts=None, parent=None):
         super().__init__(parent)
         self._conn = conn
         self._report_error = report_error
+        self._on_show_in_accounts = on_show_in_accounts
         self._alias_groups = payee_aliases.load_aliases()
         self._alias_names = payee_aliases.load_canonical_names()
 
@@ -140,7 +150,7 @@ class PayeesPane(QWidget):
         self.detail_view = QTableView()
         self.detail_view.setModel(self.detail_model)
         self.detail_view.horizontalHeader().setStretchLastSection(True)
-        enable_cell_copy(self.detail_view)
+        enable_cell_copy(self.detail_view, extra_actions=self._detail_context_actions)
 
         list_pane = QWidget()
         list_layout = QVBoxLayout(list_pane)
@@ -194,6 +204,12 @@ class PayeesPane(QWidget):
         self.detail_model.set_transactions(transactions)
         self.detail_count_label.setText(f"{len(transactions)} records")
         self.detail_view.resizeColumnsToContents()
+
+    def _detail_context_actions(self, row):
+        if self._on_show_in_accounts is None:
+            return []
+        transaction_id = self.detail_model.transaction_at(row)[0]
+        return [("Show in accounts", partial(self._on_show_in_accounts, transaction_id))]
 
     def _on_merge_clicked(self):
         try:

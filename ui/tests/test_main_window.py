@@ -412,6 +412,46 @@ def test_import_selects_account_and_highlights_imported_rows(qapp, conn, monkeyp
     assert color is not None
 
 
+def test_show_transaction_in_accounts_selects_and_highlights_the_transaction(qapp, conn):
+    window = MainWindow(conn)
+
+    window._show_transaction_in_accounts(1000)
+
+    assert window.tabs.currentIndex() == ACCOUNTS_TAB
+    selected_rows = window.account_view.selectionModel().selectedRows()
+    assert window.account_model.account_at(selected_rows[0].row())[0] == 1
+    row = next(
+        row for row in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(row)[0] == 1000
+    )
+    assert window.transaction_view.selectionModel().selectedRows()[0].row() == row
+    assert window.transaction_model.data(
+        window.transaction_model.index(row, 0), Qt.BackgroundRole
+    ) is not None
+
+
+def test_show_transaction_in_accounts_reveals_a_closed_account(qapp, conn):
+    conn.execute(
+        "INSERT INTO transactions VALUES "
+        "(2000, 2, 10, 100, '2024-03-20', -10.00, 'old card purchase', "
+        "NULL, NULL, NULL, NULL, NULL)"
+    )
+    window = MainWindow(conn)
+
+    window._show_transaction_in_accounts(2000)
+
+    assert window.show_closed_checkbox.isChecked() is True
+    selected_rows = window.account_view.selectionModel().selectedRows()
+    assert window.account_model.account_at(selected_rows[0].row())[0] == 2
+    row = next(
+        row for row in range(window.transaction_model.rowCount())
+        if window.transaction_model.transaction_at(row)[0] == 2000
+    )
+    assert window.transaction_model.data(
+        window.transaction_model.index(row, 0), Qt.BackgroundRole
+    ) is not None
+
+
 def test_selecting_a_different_account_forgets_highlighted_import_rows(qapp, conn, monkeypatch):
     import import_qfx_dialog
     import main_window

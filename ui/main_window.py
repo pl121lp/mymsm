@@ -224,8 +224,12 @@ class MainWindow(QMainWindow):
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 2)
 
-        self.categories_pane = CategoriesPane(self._conn, self.statusBar().showMessage)
-        self.payees_pane = PayeesPane(self._conn, self.statusBar().showMessage)
+        self.categories_pane = CategoriesPane(
+            self._conn, self.statusBar().showMessage, self._show_transaction_in_accounts
+        )
+        self.payees_pane = PayeesPane(
+            self._conn, self.statusBar().showMessage, self._show_transaction_in_accounts
+        )
         self.investments_pane = InvestmentsPane(self._conn, self.statusBar().showMessage)
 
         dictionaries_tabs = QTabWidget()
@@ -329,7 +333,41 @@ class MainWindow(QMainWindow):
         for row in range(self.account_model.rowCount()):
             if self.account_model.account_id_at(row) == account_id:
                 self.account_view.selectRow(row)
+                self.account_view.scrollTo(
+                    self.account_model.index(row, 0), QAbstractItemView.PositionAtCenter
+                )
                 return
+
+    def _select_transaction_row(self, transaction_id):
+        for row in range(self.transaction_model.rowCount()):
+            if self.transaction_model.transaction_at(row)[0] == transaction_id:
+                self.transaction_view.selectRow(row)
+                self.transaction_view.scrollTo(
+                    self.transaction_model.index(row, 0), QAbstractItemView.PositionAtCenter
+                )
+                return
+
+    def _show_transaction_in_accounts(self, transaction_id):
+        transaction = data.get_transaction_row(self._conn, transaction_id)
+        if transaction is None:
+            self.statusBar().showMessage("That record no longer exists.")
+            return
+        account_id = transaction[1]
+
+        accounts = data.list_accounts(self._conn, include_closed=True)
+        account = next((row for row in accounts if row[0] == account_id), None)
+        if account is None:
+            self.statusBar().showMessage("The account for that record no longer exists.")
+            return
+        is_closed = account[5]
+        if self.show_closed_checkbox.isChecked() != is_closed:
+            self.show_closed_checkbox.setChecked(is_closed)
+
+        self._highlighted_account_id = account_id
+        self._highlighted_transaction_ids = {transaction_id}
+        self.tabs.setCurrentIndex(ACCOUNTS_TAB)
+        self._select_account_row(account_id)
+        self._select_transaction_row(transaction_id)
 
     def _on_account_details_button_clicked(self):
         indexes = self.account_view.selectionModel().selectedRows()

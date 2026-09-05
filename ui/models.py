@@ -1197,6 +1197,9 @@ class CategoryTransactionTableModel(QAbstractTableModel):
         self._transactions = transactions
         self.endResetModel()
 
+    def transaction_at(self, row):
+        return self._transactions[row]
+
     def rowCount(self, parent=None):
         return len(self._transactions)
 
@@ -1289,6 +1292,9 @@ class PayeeTransactionTableModel(QAbstractTableModel):
         self.beginResetModel()
         self._transactions = transactions
         self.endResetModel()
+
+    def transaction_at(self, row):
+        return self._transactions[row]
 
     def rowCount(self, parent=None):
         return len(self._transactions)

@@ -14,6 +14,34 @@ def test_payees_list_view_supports_copy(qapp, dict_conn):
     assert pane.list_view.contextMenuPolicy() == Qt.CustomContextMenu
 
 
+def test_category_record_context_action_shows_the_clicked_record_in_accounts(qapp, dict_conn):
+    shown_transaction_ids = []
+    pane = CategoriesPane(
+        dict_conn, report_error=lambda msg: None, on_show_in_accounts=shown_transaction_ids.append
+    )
+    pane.list_view.setCurrentIndex(pane.list_model.index(0))
+
+    actions = pane._detail_context_actions(0)
+
+    assert [label for label, _callback in actions] == ["Show in accounts"]
+    actions[0][1]()
+    assert shown_transaction_ids == [1000]
+
+
+def test_payee_record_context_action_shows_the_clicked_record_in_accounts(qapp, dict_conn):
+    shown_transaction_ids = []
+    pane = PayeesPane(
+        dict_conn, report_error=lambda msg: None, on_show_in_accounts=shown_transaction_ids.append
+    )
+    pane.list_view.setCurrentIndex(pane.list_model.index(0))
+
+    actions = pane._detail_context_actions(0)
+
+    assert [label for label, _callback in actions] == ["Show in accounts"]
+    actions[0][1]()
+    assert shown_transaction_ids == [1000]
+
+
 def test_investments_list_view_supports_copy(qapp, dict_conn):
     pane = InvestmentsPane(dict_conn, report_error=lambda msg: None)
     assert pane.list_view.contextMenuPolicy() == Qt.CustomContextMenu
